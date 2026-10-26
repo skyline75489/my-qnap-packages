@@ -79,6 +79,11 @@ loader is present. QTS is glibc-based so `/lib64/ld-linux-x86-64.so.2` exists an
 this runs. To eliminate the loader dependency entirely, build from source with
 `BUILDMODE_FLAGS=` (empty), which yields a fully static ELF.
 
+**That "QTS is glibc-based" step is an assumption, not a verified fact.** See
+[static-linking.md](static-linking.md) for the empirical A/B test proving the
+loader dependency is real and is the *only* thing the binary needs from the host,
+plus real QPKG examples that build fully static.
+
 ## Compressed payload size
 
 `gzip -9` on the 215 MB full binary → **63.5 MB**. That is roughly the data-archive

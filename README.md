@@ -34,3 +34,11 @@ scripts/      Cross-package helpers (build, inspect, verify)
 ## Status
 
 Spec notes landed. No packages built yet.
+
+## Decisions
+
+| Item | Value |
+|---|---|
+| Target arch | `x86_64` |
+| Listen port | `5050` — 5000 is taken by the QTS portal |
+
