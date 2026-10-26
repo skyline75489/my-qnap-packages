@@ -1,0 +1,12 @@
+# Build output
+build/
+*.qpkg
+
+# qbuild working files
+*.qdkorig
+*.qdksave
+
+# OS noise
+.DS_Store
+__pycache__/
+*.pyc
