@@ -185,12 +185,11 @@ must not be omitted, or zot writes its store wherever the script happened to be.
    zot: **25 GB for 85 repos**, of which 3.1 GB is the `_trivy` CVE database and 1.4 GB
    the `metabase` index. Discardable is not the same as small: that much data still has
    to fit somewhere for as long as the registry runs, and pull-through keeps growing it.
-   So `QPKG_VOLUME_SELECT` decides which volume absorbs the growth. Planned:
-   `QPKG_VOLUME_SELECT="3"` (select on both install and migration) so it lands on a
-   volume with room rather than defaulting silently.
-   If the default volume is known to have room, `0` is a perfectly fine answer — but it
-   should be a decision, not an accident. A full volume on QTS is not a registry-only
-   problem: writes fail across the board (logs, config, other apps on that volume).
+   So `QPKG_VOLUME_SELECT` decides which volume absorbs the growth.
+   **Decided: `QPKG_VOLUME_SELECT="3"`** — select volume at both install and
+   migration (per the QDK spec: `1` = install, `2` = migrate, `3` = both). QTS then
+   prompts for the target volume in App Center instead of silently using the default.
+   Requires QTS ≥ 4.2.1; we gate on 5.0.0 anyway.
 2. **No per-share quota.** `.qpkg` is not a share, so nothing bounds pull-through
    growth except the volume itself. Rely on zot's `gc`/`gcDelay` and QTS volume
    alerts; do not rely on a quota.
