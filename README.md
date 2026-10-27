@@ -21,9 +21,10 @@ directly via its own init sequence.
 ## Layout
 
 ```
-docs/         QPKG format/build notes — what the toolkit actually does
+AGENTS.md     start here: ground rules, doc map, commands, verification standard
+docs/         format notes, troubleshooting, and this package's decisions
 packages/     One directory per QPKG: qpkg.cfg, package_routines, shared/, icons/
-scripts/      Cross-package helpers (build, inspect, verify)
+scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
 ```
 
 ## Environment
@@ -53,16 +54,20 @@ scripts/make-icons.sh /path/to/logo512.png packages/zot/icons   # optional, icon
 scripts/build-qpkg.sh
 ```
 
-## Docs
+## Working on this repo
 
-| Doc | What it answers |
+Start with **[AGENTS.md](AGENTS.md)** — doc map, ground rules, commands, and the
+verification standard all live there. The one thing worth knowing immediately: *"done"
+means `scripts/test-package.sh` passes, not that `qbuild` printed success.*
+
+Quick map:
+
+| | |
 |---|---|
-| [troubleshooting.md](docs/troubleshooting.md) | **Start here when it breaks.** Symptom → cause → fix, from real failures |
-| [qpkg-spec.md](docs/qpkg-spec.md) | The format: layout, `qpkg.cfg` keys, hook asymmetry, `qbuild`, build-host gotchas |
-| [zot-config.md](docs/zot-config.md) | Which extensions and why; the `cve` trap; logging and rotation |
-| [zot-storage.md](docs/zot-storage.md) | Where blobs live, install volume vs storage volume, uninstall semantics |
-| [static-linking.md](docs/static-linking.md) | Why the upstream binary runs on glibc 2.21 unmodified (tested, not assumed) |
-| [zot-binary-notes.md](docs/zot-binary-notes.md) | Release assets, `-minimal` build, linkage, payload size |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | start here when something is broken |
+| [docs/qpkg-spec.md](docs/qpkg-spec.md) | the QPKG format and build host behaviour |
+| [docs/zot-*.md](docs/) | this package's config, storage, linkage decisions |
+| [packages/zot/README.md](packages/zot/README.md) | what's inside the package |
 
 ## Decisions
 
