@@ -15,8 +15,13 @@ qpkg.cfg              metadata: name/version, service script, port 5050, volume 
 package_routines      install hooks (data dirs, chown, cron) + pre-remove (stop, cron)
 shared/config.json    zot config — relative paths, level warn, no sync, no cve
 shared/zot.sh         start|stop|restart|status|rotate|remove
+icons/                Zot.gif 64x64, Zot_gray.gif 64x64, Zot_80.gif 80x80
 x86_64/zot            the payload; fetched, never committed
 ```
+
+Icons are generated from the upstream zot mark (`project-zot/zui`
+`public/logo512.png`, Apache-2.0) by `scripts/make-icons.sh`, flattened onto white
+so the dark logo stays visible on a dark App Center theme.
 
 `shared/` lands at `$SYS_QPKG_DIR`, so `config.json` is protected by
 `QPKG_CONFIG="config.json"` (`.qdkorig`/`.qdksave` on upgrade) and `zot.sh` is the
@@ -64,4 +69,3 @@ and removes the pid file.
 - Unsigned. QTS requires App Center → "Allow installation of applications without a
   valid digital signature", or a GPG/QNAP signing step.
 - Not installed on the NAS. No `.qpkg` has been run against real QTS.
-- Icons are omitted; App Center falls back to defaults.

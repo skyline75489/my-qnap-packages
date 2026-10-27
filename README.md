@@ -46,7 +46,9 @@ script exercised end-to-end against a fake root (start, push, rotate, stop).
 Build with:
 
 ```sh
-scripts/fetch-zot.sh && scripts/build-qpkg.sh
+scripts/fetch-zot.sh      # payload, sha256-verified against upstream checksums
+scripts/make-icons.sh /path/to/logo512.png packages/zot/icons   # optional, icons are committed
+scripts/build-qpkg.sh
 ```
 
 ## Decisions
