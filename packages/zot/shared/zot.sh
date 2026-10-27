@@ -92,17 +92,31 @@ do_start(){
     # cd matters: relative paths in config.json resolve against cwd.
     cd "$QPKG_ROOT" || { err_msg "cannot cd to $QPKG_ROOT"; exit 1; }
 
-    # Detach into a new session when possible. QTS kills the start script's
-    # process group once the script returns, which takes a plain `nohup ... &`
-    # child down with it. With setsid, $! is setsid's pid (it exits), so the
-    # child writes its own pid and then execs in place to keep that pid.
+    # Detach without assuming nohup or setsid exist — QTS has NEITHER on some
+    # builds ("nohup: command not found" killed the first start outright, which
+    # QTS then recorded as a failed start and left the app disabled).
+    #
+    # Preference order:
+    #   setsid            -> new session, immune to the script's process group
+    #   busybox setsid    -> same, when only the applet is compiled in
+    #   sh -c + trap      -> nohup's actual mechanism: ignore SIGHUP and exec
+    # The child writes its own pid in every branch (with setsid, $! is setsid's
+    # pid, which exits), then execs in place so the pid stays valid.
+    _DETACH="plain"
     if command -v setsid >/dev/null 2>&1; then
-        setsid /bin/sh -c 'echo $$ > "$1"; exec "$2" serve "$3"' sh \
-            "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
+        _DETACH="setsid"
+        setsid /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
+            zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
+    elif [ -x /bin/busybox ] && /bin/busybox setsid true >/dev/null 2>&1; then
+        _DETACH="busybox-setsid"
+        /bin/busybox setsid /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
+            zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
     else
-        nohup "$BIN" serve "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
-        echo $! > "$PIDF"
+        _DETACH="trap-hup"
+        /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
+            zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
     fi
+    log_msg "detach method: $_DETACH"
 
     # Do not judge liveness on the first instant: between fork and exec the pid
     # exists but its /proc cmdline is still the shell, so a naive check reports
@@ -132,6 +146,26 @@ do_start(){
         tail -n 20 "$CONSOLE" 2>/dev/null
         rm -f "$PIDF"
         exit 1
+    fi
+
+    # A live pid is not the same as a bound socket. QTS returns from `start` and
+    # immediately offers the UI, and a client that connects in that window gets
+    # ECONNREFUSED — indistinguishable from "not running". Wait for the listen
+    # socket, bounded, and do not fail on timeout: a large blob store can take a
+    # while to reparse and zot does bind eventually.
+    _PORT=$(/sbin/getcfg "$QPKG_NAME" Web_Port -d 5050 -f "$CONF")
+    if command -v netstat >/dev/null 2>&1; then
+        _n=0
+        while [ "$_n" -lt 15 ]; do
+            if netstat -tln 2>/dev/null | grep -q "[:.]${_PORT} "; then
+                log_msg "listening on port $_PORT"
+                _n=-1
+                break
+            fi
+            sleep 1
+            _n=$((_n + 1))
+        done
+        [ "$_n" -eq 15 ] && log_msg "pid is up but port $_PORT is not listening yet"
     fi
 
     log_msg "started (pid $(cat "$PIDF"))"
