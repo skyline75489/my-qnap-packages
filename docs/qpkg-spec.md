@@ -202,6 +202,102 @@ QDK itself installs as a QPKG or a Debian package
 - **Unsigned QPKGs install only after enabling App Center → "Allow installation of
   applications without a valid digital signature."**
 
+## Storage and data placement
+
+Verified against `shared/scripts/qinstall.sh` (~1570 lines) in `qnap-dev/QDK`,
+not just the guide — two of these differ from what the documentation implies.
+
+### Install path is derived from the working directory
+
+```sh
+assign_base(){
+    SYS_QPKG_INSTALL_PATH="$(dirname ${PWD})"
+    SYS_QPKG_DIR="$SYS_QPKG_INSTALL_PATH/$QPKG_NAME"
+}
+```
+
+So in practice `SYS_QPKG_DIR=/share/<VOL>/.qpkg/<QPKG_NAME>` — the volume is
+whatever the installer chose, not something the package controls.
+
+`QPKG_VOLUME_SELECT` does **not** move the install path at runtime. It is written to
+the `qpkg.conf` field `Volume_Select` (`set_qpkg_volume_select`), where the QTS
+installer reads it to decide whether to prompt for a volume: `0` default volume,
+`1` select on install, `2` select on migrate, `3` both, `4` select with no default.
+
+### Uninstall destroys everything under the install path
+
+Generated `.uninstall.sh`, in order:
+
+1. `$QPKG_SERVICE_PROGRAM stop` then `remove`, `sleep 5`, `sync`
+2. `$PKG_PRE_REMOVE` ← **the only chance to rescue data**
+3. ```sh
+   mkdir -p /tmp/qpkg_blankdir
+   rsync -a --delete /tmp/qpkg_blankdir "$SYS_QPKG_DIR"
+   rm -fr "$SYS_QPKG_DIR"
+   ```
+4. remove init symlinks / icons
+5. `$PKG_MAIN_REMOVE`, then `$PKG_POST_REMOVE`
+
+The blank-directory `rsync --delete` deliberately empties the tree before `rm` (it
+handles very large trees and busy files). There is no "keep data" option and no
+recycle bin. **Any byte under `$SYS_QPKG_DIR` is gone on uninstall.**
+
+### The run-time data recipe protects upgrades, not uninstalls
+
+Cookbook recipe "Include a directory for run-time data" says create it in a hook:
+
+```sh
+pkg_install(){
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/cache"
+}
+```
+
+The reason given is that QDK only tracks files **shipped inside the package** for
+obsolete-file cleanup on upgrade, so an imperatively-created directory is invisible
+to that bookkeeping and upgrades never touch it.
+
+That is correct and useful — but note the scope: it makes the directory *upgrade*-safe.
+It does not make it *uninstall*-safe, per the previous section. The recipe is for
+data you can afford to lose, or can regenerate.
+
+### Shares are the durable location
+
+```sh
+get_share_path(){
+    local location=$($CMD_GETCFG "$share" path -f $SYS_CONFIG_DIR/smb.conf)
+    [ -n "$location" ] || return 1
+    eval $path=\"$location\"
+}
+```
+
+It reads `smb.conf`, so it resolves **any** shared folder, not only system shares.
+System shares are resolved first through `def_share.info`:
+
+```sh
+SYS_PUBLIC_SHARE=$($CMD_GETCFG SHARE_DEF defPublic -d Public -f $SYS_CONFIG_DIR/def_share.info)
+get_share_path $SYS_PUBLIC_SHARE SYS_PUBLIC_PATH
+```
+
+giving `SYS_PUBLIC_PATH`, `SYS_DOWNLOAD_PATH`, `SYS_MULTIMEDIA_PATH`,
+`SYS_RECORDINGS_PATH`, `SYS_USB_PATH`, `SYS_WEB_PATH`.
+
+A shared folder is the QNAP-native place for data that must outlive the package.
+It also gets what the install path does not: a quota, snapshots, and visibility in
+File Station.
+
+### Doc/implementation mismatch: `SYS_QPKG_BASE`
+
+The guide documents `SYS_QPKG_BASE` as "volume root containing the Public share,
+e.g. `/share/MD0_DATA`". In `qinstall.sh` it is declared and never assigned:
+
+```
+138:SYS_QPKG_BASE=""
+```
+
+That is its only occurrence in the file. **Do not rely on `SYS_QPKG_BASE`.** Derive
+the volume root from `$(dirname "$SYS_QPKG_INSTALL_PATH")` if needed, or resolve a
+share instead.
+
 ## Notes for binary payloads
 
 - Use `--pre-build`/`--post-build` to stage per-arch binaries into the right arch

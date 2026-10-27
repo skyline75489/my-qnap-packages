@@ -41,8 +41,9 @@ Spec notes landed. No packages built yet.
 |---|---|
 | Target arch | `x86_64` |
 | Listen port | `5050` — 5000 is taken by the QTS portal |
-| NAS loader | glibc 2.21 (`ld-linux-x86-64.so.2 -> ld-2.21.so`) |
+| NAS loader | glibc 2.21 (`ld-linux-x86-64.so.2 -> ld-2.21.so`) — QTS pins it deliberately |
+| QTS version | 5.2.9 (so `QTS_MINI_VERSION="5.0.0"` is correct) |
 | zot payload | Upstream `zot-linux-amd64` v2.1.22 prebuilt — verified against glibc 2.21 |
-| `QTS_MINI_VERSION` | QTS 4.x (glibc 2.21 implies 4.x, not 5.x) — confirm exact version |
+| Storage | Outside `$SYS_QPKG_DIR` — see [docs/zot-storage.md](docs/zot-storage.md) |
 | Open question | CA root bundle age on the NAS, for TLS pull-through |
 
