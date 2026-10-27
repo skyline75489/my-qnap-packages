@@ -84,36 +84,79 @@ Measured on the fedora zot (73 MB, uptime 2.7 days, `level: info`):
 
 Most of it is per-request `info` logging plus the CVE failure loop.
 
-### What "truncate at start" actually does
+### Rotate-at-start does not bound size either
 
-`start)` does `: > data/log/zot.log` — the file is emptied every time the service
-starts, so it only ever holds the current run.
+Same flaw as truncate-at-start, and one I originally talked myself into: a rotation
+tied to `start)` only fires when the service restarts. On a NAS the service runs for
+months, so "one run's worth" is unbounded in exactly the same way. Rotating at start
+preserves the previous run's log across a restart — which is useful for post-crash
+forensics — but it is **not a size control**.
 
-Two problems for this service in particular:
-
-1. **It bounds nothing if the service never restarts.** A registry is meant to run for
-   months. At 27 MB/day, "one run's worth" is gigabytes. Truncate-at-start is only a
-   real bound for short-lived processes.
-2. **It destroys the evidence you want.** The log is truncated *as part of starting*,
-   so after a crash-restart the post-mortem log is already gone.
+If the log must be bounded, the bound has to run on a timer **while the service runs**.
 
 ### Plan instead
 
-1. Remove the noise at the source: no `cve` block, and `"level": "warn"` in steady
-   state. That eliminates ~78% (`info` request logs) plus the CVE error loop, leaving
-   almost nothing in normal operation.
-2. Rotate on start rather than truncate: if the log is non-trivial, move it to
-   `zot.log.1` (replacing the previous `.1`) and start a fresh file. Bounded at two
-   files, and the previous run's log survives one restart — which is exactly the one
-   you want after a crash.
+1. **Cut the volume at the source: `"level": "warn"`.** That is the actual control.
+   At `info` the bulk of output is per-request logging (78% of 171k lines measured);
+   `warn` removes it. Note `error` is *not* the better choice — see below.
+2. **Add a size ceiling on a timer.** QTS has cron, and QPKGs do use it; `DownloadCenter`
+   is the precedent:
 
-```sh
-# in start), before launching zot
-[ -s "$LOG" ] && mv -f "$LOG" "$LOG.1"
+   ```sh
+   CRONTAB="/etc/config/crontab"
+   cron_add(){
+       grep -qF "$QPKG_ROOT/zot.sh rotate" "$CRONTAB" 2>/dev/null && return 0
+       echo "0 4 * * * /bin/sh $QPKG_ROOT/zot.sh rotate >/dev/null 2>&1" >> "$CRONTAB"
+       crontab "$CRONTAB"
+       /etc/init.d/crond.sh restart >/dev/null 2>&1
+   }
+   ```
+
+   with `rotate` doing a size check rather than an unconditional move:
+
+   ```sh
+   rotate)
+       [ -f "$LOG" ] || exit 0
+       SIZE=$(wc -c < "$LOG")
+       [ "$SIZE" -gt 10485760 ] || exit 0      # 10 MB ceiling
+       mv -f "$LOG.1" "$LOG.2" 2>/dev/null || true
+       mv -f "$LOG" "$LOG.1"
+       : > "$LOG"
+       ;;
+   ```
+
+   Bounded at three files ≤ ~20 MB total, and it only fires if something actually
+   misbehaves. `cron_remove` (delete the line, `crontab $CRONTAB`, restart crond) goes
+   in `PKG_PRE_REMOVE`.
+3. **Keep `mv zot.log zot.log.1` in `start)`** as a secondary — not as the size bound,
+   but so the previous run survives one restart. Cheap and it is the log you want
+   after a crash.
+
+### Why `warn` rather than `error`
+
+Check what the levels actually contain on this workload, once `cve` and `sync` are out:
+
+| Level | Fedora (with cve + sync) | NAS v1 (no cve, no sync) |
+|---|---|---|
+| `info` | 134,276 (78%) — per-request | still per-request, still large |
+| `warn` | 229 | a handful |
+| `error` | 36,497 — 29,588 sync + 5,852 sync + 222 scan | **≈ 0** |
+
+The 36k errors were almost entirely sync and CVE failures, neither of which exists on
+the NAS. So `warn` and `error` are both effectively silent there — and `error` would
+additionally throw away warnings that matter, e.g.:
+
+```
+[warn] metadb: storage parse incomplete; skipping fast-restart stamp so the next
+       restart reparses
 ```
 
-That beats both truncate-at-start (loses evidence) and unbounded append (grows until
-the volume notices).
+That is exactly the kind of message you want after an unclean shutdown. `error` buys
+nothing over `warn` on this workload and loses diagnostics, so: **`warn`**.
+
+Cost of `warn`: no startup version banner (`info`). Get it from `zot --version`, or
+raise to `info` temporarily by editing the config and restarting.
+
 
 ## Holding pattern
 
