@@ -8,13 +8,24 @@ in the binary.
 
 - Upstream zot binaries are **static-PIE**: no library dependencies, but they *do*
   require `/lib64/ld-linux-x86-64.so.2` to exist at runtime.
-- QTS is glibc-based, so that loader is present and the upstream binary will almost
-  certainly run unmodified. "Almost certainly" is the problem — it is an unverified
-  assumption about the appliance image.
-- Building from source with `BUILDMODE_FLAGS=` removes the loader dependency
-  entirely and produces a true static `ET_EXEC`. It is cheap to do (see below).
-- The QNAP ecosystem convention is fully static: both real Go QPKGs I found build
-  with `CGO_ENABLED=0` and **no** `-buildmode=pie`.
+- **Tested against the NAS's actual loader, glibc 2.21: it works.** The v2.1.22
+  release binary serves, accepts a push, and serves pulls correctly. See
+  [Tested against glibc 2.21](#tested-against-glibc-221-the-nas-loader).
+- So there is **no need to build from source** for loader reasons. Ship upstream's
+  binary.
+- The QNAP ecosystem convention is still fully static: both real Go QPKGs I found
+  build with `CGO_ENABLED=0` and **no** `-buildmode=pie`. We just don't need to
+  follow it here.
+
+### Correction: glibc 2.27 is not the floor for static-PIE
+
+My first read of this was that glibc 2.27's static-PIE work meant the 2.21 loader
+couldn't bootstrap a static-PIE binary. **That is wrong.** glibc 2.27 added support
+for building *glibc itself* as static-PIE; it did not gate the loader's ability to
+run an `ET_DYN` main executable. The loader only has to process
+`R_X86_64_RELATIVE` relocations, which `ld.so` has handled for far longer. The
+empirical test below is what settled it, not the version history.
+
 
 ## Real-world QPKG examples that ship Go binaries
 
@@ -110,8 +121,66 @@ unshare -r chroot /tmp/piechroot /zot --version
 ```
 
 Conclusion: the static-PIE zot needs exactly one thing from the host —
-`/lib64/ld-linux-x86-64.so.2`. No libc, no other libraries. If that path exists on
-QTS, the upstream binary runs.
+`/lib64/ld-linux-x86-64.so.2`. No libc, no other libraries.
+
+## Tested against glibc 2.21 (the NAS loader)
+
+The NAS reports:
+
+```
+lrwxrwxrwx 1 admin administrators 10 2026-10-14 15:26
+    ld-linux-x86-64.so.2 -> ld-2.21.so
+```
+
+glibc 2.21 is a 2015-era release, so this needed testing, not assuming. Test setup:
+pulled the genuine `libc6_2.21-0ubuntu4.3_amd64.deb` (Ubuntu 15.04) and extracted the
+real `ld-2.21.so`, rather than approximating with a newer loader.
+
+| Test | Result |
+|---|---|
+| `ld-2.21.so /zot --version` | prints full version JSON |
+| `ld-2.21.so /zot serve <cfg>` | process stays up |
+| `GET /v2/` | 200 |
+| `GET /metrics` | 200 |
+| `GET /` (UI) | 200 |
+| `GET /v2/_catalog` | `{"repositories":[]}` |
+| **push** image via `skopeo copy` → zot | exit 0, blob + config + manifest written |
+| `GET /v2/probe/rt/tags/list` | `{"tags":["1.0"]}` |
+| manifest `Docker-Content-Digest` | correct digest returned |
+| **pull** back to `oci:` archive | exit 0, valid image |
+| storage on disk | 2.4 MB for the probe image |
+
+Also tested the **kernel exec path** (`PT_INTERP=/lib64/ld-linux-x86-64.so.2` resolved
+inside a chroot to `ld-2.21.so`), not just invoking the loader manually — `/v2/` and
+UI both 200.
+
+Tested binary: `zot-linux-amd64` **v2.1.22** (226 MB, built with `go1.27.1`), i.e. the
+exact release artifact we would ship. `Type: DYN`,
+`INTERP=/lib64/ld-linux-x86-64.so.2`, `NEEDED` count 0.
+
+**Verdict: the upstream binary runs on this NAS's loader unmodified.**
+
+### What this means for packaging
+
+1. **No from-source build needed.** Ship `zot-linux-amd64` v2.1.22 as-is.
+2. **glibc 2.21 dates the firmware.** It indicates QTS 4.x, not 5.x. So
+   `QTS_MINI_VERSION` must target QTS 4.x (e.g. `4.3.0`), **not** `5.0.0` as an
+   earlier draft had it. Confirm the exact QTS version via App Center.
+3. **CA certificates are the remaining unknown.** TLS pull-through uses Go's system
+   root store (`/etc/ssl/certs/ca-certificates.crt` and friends). On 2015-era
+   firmware the bundle may predate current roots, which would break `sync` against
+   ghcr.io/quay.io even though the binary itself runs fine. Verify before relying on
+   pull-through on the NAS.
+
+Incidental finding while testing: zot **refuses to start** if `ui` is enabled without
+`search` —
+
+```
+failed to enable ui, search extension must be enabled
+```
+
+`UI_DEPENDENCIES := search,mgmt,userprefs` in the Makefile handles this for the
+*default* build, but a hand-written config still has to enable `search`.
 
 ## Why upstream builds PIE
 
@@ -160,19 +229,15 @@ Environment quirks to respect when building:
 
 ## Recommendation
 
-Ship **upstream's prebuilt binary first** (zero build infrastructure, 63.5 MB
-gzipped) and treat "does the loader exist on QTS" as a one-line verification on the
-NAS:
+**Ship upstream's prebuilt `zot-linux-amd64` v2.1.22.** Zero build infrastructure,
+63.5 MB gzipped, and it is verified to run on this NAS's glibc 2.21 loader — serve,
+push, pull, UI, metrics all exercised.
 
-```sh
-ls -l /lib64/ld-linux-x86-64.so.2
-```
+Keep the from-source path in your back pocket rather than as the plan. Reason to use
+it later: dropping unneeded extensions (`lint`, `imagetrust`, `scrub`, `profile`,
+`events`) to shrink the payload, or if we ever need `ET_EXEC` for a different target.
+Not needed for this NAS.
 
-If it's there, done. If not — or if we want the package to be provably
-self-contained — build from source with `BUILDMODE_FLAGS=` to get `ET_EXEC`, which
-also lets us drop unneeded extensions and shrink the payload.
+Before relying on pull-through, verify CA roots on the NAS (see above). A bare
+`curl -I https://ghcr.io` from the NAS shell is enough to tell.
 
-A middle option if we want certainty without maintaining a Go build: ship the
-prebuilt binary and additionally include the loader from a known-good Debian image
-in the package. Not recommended — it duplicates a system file and version-couples us
-to the NAS. Mentioned only for completeness.
