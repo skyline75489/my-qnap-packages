@@ -180,10 +180,17 @@ must not be omitted, or zot writes its store wherever the script happened to be.
 
 ### Consequences to plan for
 
-1. **The install volume is now the storage volume.** `QPKG_VOLUME_SELECT` matters —
-   set it so the admin picks the volume that has space, rather than silently landing
-   on the default volume. Planned: `QPKG_VOLUME_SELECT="3"` (select on both install
-   and migration).
+1. **The install volume is now the storage volume.** Not for durability — the data is
+   discardable — but for **capacity while it exists**. Measured on the existing backup
+   zot: **25 GB for 85 repos**, of which 3.1 GB is the `_trivy` CVE database and 1.4 GB
+   the `metabase` index. Discardable is not the same as small: that much data still has
+   to fit somewhere for as long as the registry runs, and pull-through keeps growing it.
+   So `QPKG_VOLUME_SELECT` decides which volume absorbs the growth. Planned:
+   `QPKG_VOLUME_SELECT="3"` (select on both install and migration) so it lands on a
+   volume with room rather than defaulting silently.
+   If the default volume is known to have room, `0` is a perfectly fine answer — but it
+   should be a decision, not an accident. A full volume on QTS is not a registry-only
+   problem: writes fail across the board (logs, config, other apps on that volume).
 2. **No per-share quota.** `.qpkg` is not a share, so nothing bounds pull-through
    growth except the volume itself. Rely on zot's `gc`/`gcDelay` and QTS volume
    alerts; do not rely on a quota.
@@ -226,9 +233,12 @@ Paths are relative to `$QPKG_ROOT` (the service script `cd`s there first):
 
 ## Open questions
 
-- Which volume, and how much space? The install volume now holds the blobs, so this
-  is the number that decides whether pull-through is useful. The existing zot holds
-  ~85 repos.
+- Which volume, and how much space? Baseline measured on the existing backup zot:
+  **25 GB / 85 repos**. Whether the default volume can absorb that plus growth decides
+  `QPKG_VOLUME_SELECT`.
+- Should `search.cve` be enabled? It is 3.1 GB of the 25 GB (`_trivy` DB) and is a
+  second upstream download path to keep working. The fedora config already sets
+  `"cve": { "updateInterval": "0" }`; doing the same here likely drops to ~22 GB.
 - Should `data/log/zot.log` be rotated? QTS will not rotate it for us and zot has no
   built-in rotation. Options: log to stdout and let the service wrapper truncate, or
   rotate in the init script.
