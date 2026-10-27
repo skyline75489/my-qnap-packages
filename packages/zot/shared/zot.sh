@@ -92,27 +92,36 @@ do_start(){
     # cd matters: relative paths in config.json resolve against cwd.
     cd "$QPKG_ROOT" || { err_msg "cannot cd to $QPKG_ROOT"; exit 1; }
 
-    # Detach without assuming nohup or setsid exist — QTS has NEITHER on some
-    # builds ("nohup: command not found" killed the first start outright, which
-    # QTS then recorded as a failed start and left the app disabled).
+    # Detach without trusting PATH or assuming nohup exists.
     #
-    # Preference order:
-    #   setsid            -> new session, immune to the script's process group
-    #   busybox setsid    -> same, when only the applet is compiled in
-    #   sh -c + trap      -> nohup's actual mechanism: ignore SIGHUP and exec
-    # The child writes its own pid in every branch (with setsid, $! is setsid's
-    # pid, which exits), then execs in place so the pid stays valid.
-    _DETACH="plain"
-    if command -v setsid >/dev/null 2>&1; then
-        _DETACH="setsid"
-        setsid /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
+    # Precedent: DownloadCenter (tasict/DownloadCenter) calls plain `setsid`
+    # unconditionally; roon-qpkg and changedetection do `command -v setsid` then
+    # fall back to `nohup`. None of them probe absolute paths, so on a host where
+    # the init-time PATH is thin, `command -v` can miss a setsid that is present.
+    # This NAS reported "nohup: command not found", which means the else-branch
+    # was reached — so probe fixed locations first rather than trusting PATH.
+    _SETSID=""
+    for _c in /usr/bin/setsid /bin/setsid /usr/sbin/setsid /sbin/setsid /usr/local/bin/setsid; do
+        if [ -x "$_c" ]; then _SETSID="$_c"; break; fi
+    done
+    if [ -z "$_SETSID" ] && command -v setsid >/dev/null 2>&1; then
+        _SETSID=$(command -v setsid)
+    fi
+
+    if [ -n "$_SETSID" ]; then
+        _DETACH="setsid($_SETSID)"
+        "$_SETSID" /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
             zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
     elif [ -x /bin/busybox ] && /bin/busybox setsid true >/dev/null 2>&1; then
         _DETACH="busybox-setsid"
         /bin/busybox setsid /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
             zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
     else
+        # Last resort. trap "" HUP is exactly what nohup does, but it does NOT
+        # create a new session — if QTS kills this process group, zot dies with
+        # it. Record enough context to diagnose that if it happens.
         _DETACH="trap-hup"
+        log_msg "no setsid found; PATH=$PATH"
         /bin/sh -c 'echo $$ > "$1"; trap "" HUP; exec "$2" serve "$3"' \
             zotdetach "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
     fi
