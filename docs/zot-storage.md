@@ -110,48 +110,126 @@ Pros: no share creation needed; still survives uninstall.
 Cons: no quota; invisible in File Station (looks like a stray directory at the
 volume root); not covered by share-level snapshots by default.
 
-### C. Under the install path — rejected
+### C. Under the install path — **chosen**
 
 `$SYS_QPKG_DIR/data`, created in `pkg_install()` per the QDK cookbook's
-"run-time data directory" recipe. Upgrade-safe, but **uninstall deletes it**. Only
-acceptable if the store is treated as disposable cache. For a primary registry, no.
+"run-time data directory" recipe. Upgrade-safe, and uninstall deletes it — which is
+the accepted trade-off here (see "Decision" below).
 
-## Recommendation
+## Decision: `${QPKG_ROOT}/data`
 
-**Option A**, with a fallback chain so install never fails:
+Chosen. Rationale: blobs without the registry are meaningless, and `onDemand: true`
+pull-through means a reinstalled zot repopulates itself as pods pull. So paying for
+durability that outlives the package buys nothing.
 
-1. `get_share_path "zot"` → use it if the share exists
-2. else `$(dirname "$SYS_QPKG_INSTALL_PATH")/zot-storage` (option B)
-3. log which one was chosen, in the system log and at startup
+```
+/share/<VOL>/.qpkg/Zot/
+    zot                 binary (215 MB)
+    config.json         shipped, QPKG_CONFIG-protected
+    zot.sh              service script
+    data/               created in pkg_install(), NOT shipped in the package
+        storage/        storage.rootDirectory
+        log/zot.log     log.output
+```
 
-`pkg_install()` must `mkdir -p` the chosen `storage/` and `log/` **before** the
-service starts. zot panics on a missing log directory and nil-derefs on a
-non-creatable storage root — both verified, see `zot-binary-notes.md`.
+### Why this is upgrade-safe
+
+`data/` is created imperatively in `pkg_install()`, never shipped:
+
+```sh
+pkg_install(){
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/data/storage" "$SYS_QPKG_DIR/data/log"
+}
+```
+
+QDK only tracks files **shipped inside the package** for obsolete-file cleanup on
+upgrade, so a directory it never saw is never touched. Upgrades preserve blobs;
+uninstall removes them. That is exactly the intended split for this decision.
+
+### Relative paths make the config volume-agnostic
+
+Verified: zot resolves a relative `storage.rootDirectory` / `log.output` against the
+**process working directory**, not against the config file's directory. Test with the
+config in `etc/` and storage relative to cwd wrote `<cwd>/data/storage/cache.db` and
+`<cwd>/data/log/zot.log`, leaving `etc/data/` untouched.
+
+So the service script does:
+
+```sh
+cd "$QPKG_ROOT" || exit 1
+exec ./zot serve config.json
+```
+
+and `config.json` contains:
+
+```json
+"storage": { "rootDirectory": "data/storage" },
+"log": { "level": "info", "output": "data/log/zot.log" }
+```
+
+Consequences, all good:
+- One config.json works on **any** volume — no install-time path substitution, no
+  placeholders, no generated-at-install file.
+- Volume migration (`QPKG_VOLUME_SELECT=2/3`) needs no config rewrite, because the
+  whole `.qpkg/<NAME>` tree moves and the relative paths still resolve.
+- The config can ship as a plain file in the package and get normal `QPKG_CONFIG`
+  `.qdkorig`/`.qdksave` protection on upgrade.
+
+The one hazard: relative paths are only correct if cwd is `$QPKG_ROOT`. The `cd`
+must not be omitted, or zot writes its store wherever the script happened to be.
+
+### Consequences to plan for
+
+1. **The install volume is now the storage volume.** `QPKG_VOLUME_SELECT` matters —
+   set it so the admin picks the volume that has space, rather than silently landing
+   on the default volume. Planned: `QPKG_VOLUME_SELECT="3"` (select on both install
+   and migration).
+2. **No per-share quota.** `.qpkg` is not a share, so nothing bounds pull-through
+   growth except the volume itself. Rely on zot's `gc`/`gcDelay` and QTS volume
+   alerts; do not rely on a quota.
+3. **Uninstall will be slow if the store is large.** The generated uninstaller does
+   `rsync -a --delete /tmp/qpkg_blankdir "$SYS_QPKG_DIR"` then `rm -fr`, so it walks
+   the whole tree. With tens of GB expect App Center to sit on the removal for a
+   while; `QPKG_TIMEOUT` does **not** govern uninstall.
+4. **The service script must implement `remove`.** The uninstaller calls
+   `$SYS_INIT_DIR/$QPKG_SERVICE_PROGRAM stop` and then `... remove`. `start`/`stop`/
+   `restart` alone are not enough.
+
 
 ## zot config implications
 
+Paths are relative to `$QPKG_ROOT` (the service script `cd`s there first):
+
 ```json
 "storage": {
-  "rootDirectory": "<chosen path>/storage",
+  "rootDirectory": "data/storage",
   "commit": true,
   "dedupe": true,
   "gc": true,
   "gcDelay": "168h",
   "gcInterval": "24h"
 },
-"log": { "level": "info", "output": "<chosen path>/log/zot.log" }
+"log": { "level": "info", "output": "data/log/zot.log" }
 ```
 
 - Keep the whole store on **one** filesystem. Don't split blobs across volumes.
-- Registry blobs are content-addressed and write-once, which is friendly to
-  snapshots and to a quota that only ever grows slowly.
+- Registry blobs are content-addressed and write-once, which is friendly to a store
+  that mostly only grows.
 - `gcDelay: 168h` matches the existing node; deleted tags keep blobs for a week.
+- **`commit: true` is fsync, nothing to do with dedupe.** Verified in
+  `pkg/storage/local/driver.go`: `fileWriter.Close()` calls `file.Sync()` only when
+  the driver's `commit` flag is set. So it forces a flush of each blob to disk before
+  close — durability against unclean shutdown / power loss, at the cost of write
+  throughput on large layers. On a NAS, where an unclean shutdown is plausible, keep
+  it `true`: a truncated blob under a correct content address is a much worse failure
+  than a slower push.
 
 ## Open questions
 
-- Share name: `zot`? Or reuse an existing share?
-- Which volume, and how much space to provision? This is the one number that
-  determines whether pull-through is useful — the existing zot holds ~85 repos.
-- Should `log/zot.log` be rotated? QTS will not rotate it for us, and zot has no
+- Which volume, and how much space? The install volume now holds the blobs, so this
+  is the number that decides whether pull-through is useful. The existing zot holds
+  ~85 repos.
+- Should `data/log/zot.log` be rotated? QTS will not rotate it for us and zot has no
   built-in rotation. Options: log to stdout and let the service wrapper truncate, or
-  a periodic rotation in the init script.
+  rotate in the init script.
+- Log level: `info` vs `warn` — `info` is useful during bring-up, `warn` after.
