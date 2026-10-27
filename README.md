@@ -44,6 +44,7 @@ Spec notes landed. No packages built yet.
 | NAS loader | glibc 2.21 (`ld-linux-x86-64.so.2 -> ld-2.21.so`) — QTS pins it deliberately |
 | QTS version | 5.2.9 (so `QTS_MINI_VERSION="5.0.0"` is correct) |
 | zot payload | Upstream `zot-linux-amd64` v2.1.22 prebuilt — verified against glibc 2.21 |
-| Storage | Outside `$SYS_QPKG_DIR` — see [docs/zot-storage.md](docs/zot-storage.md) |
+| Storage | `${QPKG_ROOT}/data` — see [docs/zot-storage.md](docs/zot-storage.md) |
+| Install volume | Now also the storage volume → `QPKG_VOLUME_SELECT="3"` |
 | Open question | CA root bundle age on the NAS, for TLS pull-through |
 
