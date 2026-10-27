@@ -24,6 +24,58 @@ rebuild, and it is exactly what pull-through latency depends on.
 out on uninstall — but that is fragile (runs as a one-shot shell block, no retry, and
 a large move could exceed `QPKG_TIMEOUT`). Not the design to rely on.
 
+## Install volume vs storage volume — two independent knobs
+
+These get conflated, so to be explicit:
+
+| | Install volume | Storage volume |
+|---|---|---|
+| Controlled by | `QPKG_VOLUME_SELECT` → `Volume_Select` in `qpkg.conf` | whatever path the config points at |
+| Holds | the ~215 MB package payload | blobs, metadata, logs |
+| Path | `/share/<VOL>/.qpkg/<NAME>` | anything |
+| Survives uninstall | **no** | yes, if outside `.qpkg/<NAME>` |
+
+The install volume only decides where the *package* unpacks. It does not constrain
+where data lives, and it does not survive uninstall. So these can differ: install the
+215 MB payload on the default volume and put blobs on whichever volume has the space.
+
+A "share" is **not** a different kind of storage — it is just a directory on a volume
+that QTS also manages. The share-vs-volume-root choice is about management features,
+not physical location:
+
+| | Share | Plain dir at volume root |
+|---|---|---|
+| Path | `/share/<VOL>/<sharename>/...` | `/share/<VOL>/zot-storage/...` |
+| Survives uninstall | yes | yes |
+| Per-share quota | yes | no |
+| File Station visibility | yes | no |
+| Snapshot-able as a share | yes | volume-level only |
+| Setup step | share must exist | none |
+
+`/share/CACHEDEV1_DATA` is the QTS 5.x volume mount convention — `DownloadCenter`'s
+build script even greps for `/share/CACHEDEV` and `/mnt/HDA_ROOT` as
+machine-specific paths to keep out of its package.
+
+### Real-world counterexample
+
+The most mature native Go QPKG I found, `tasict/DownloadCenter`, puts run-time data
+**inside** the install path:
+
+```sh
+DATA="${QPKG_ROOT}/data"
+mkdir -p "$DATA" "${DATA}/run" "$LOGDIR"
+```
+
+That is option C below, and it is a deliberate choice: uninstalling the app throws
+away the download session state, which is acceptable because it is user state, not
+expensive derived data.
+
+For zot the calculus is different but not absolute. Pull-through with
+`onDemand: true` means an **empty** registry still works — the cache rebuilds itself
+as pods pull. So losing blobs is recoverable, just slow. On a China-network link where
+ghcr.io/docker.io are unreliable, that rebuild is expensive enough that durability is
+still worth having.
+
 ## Options
 
 ### A. Dedicated share — recommended
