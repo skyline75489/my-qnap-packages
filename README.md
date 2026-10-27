@@ -4,8 +4,9 @@ QPKG packages, build scripts, and packaging specs for my QNAP NAS.
 
 ## Why this exists
 
-The NAS hosts services that the rest of the homelab depends on — notably the `zot`
-OCI registry the K3s cluster pulls images from. Those services must start from
+The NAS hosts services that the rest of the homelab depends on — notably a `zot`
+OCI registry used as the **cold backup** for the K3s cluster's image registry (the
+primary is the fedora host at `192.168.1.3:5000`). Those services must start from
 local disk:
 
 - **No Container Station wrapper.** A container-based package needs a working
