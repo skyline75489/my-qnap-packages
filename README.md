@@ -46,5 +46,7 @@ Spec notes landed. No packages built yet.
 | zot payload | Upstream `zot-linux-amd64` v2.1.22 prebuilt — verified against glibc 2.21 |
 | Storage | `${QPKG_ROOT}/data` — see [docs/zot-storage.md](docs/zot-storage.md) |
 | Install volume | Admin picks at install → `QPKG_VOLUME_SELECT="3"` |
-| Open question | CA root bundle age on the NAS, for TLS pull-through |
+| Extensions | `storage`, `search`, `ui`, `metrics` — **no `sync`, no `cve`** ([zot-config.md](docs/zot-config.md)) |
+| Logging | `level: warn`, rotate-on-start to `zot.log.1` — not truncate |
+| Populated by | LAN `skopeo copy` from the fedora zot, no upstream access |
 
