@@ -34,15 +34,16 @@ scripts/      Cross-package helpers (build, inspect, verify)
 
 ## Status
 
-`packages/zot/` builds a working `.qpkg`:
+**Installed and running** on the NAS as the cold backup registry:
 
 ```
-packages/zot/build/Zot_2.1.22_x86_64.qpkg   65.4 MB
+http://192.168.1.40:5050        zot 2.1.22, QTS 5.2.9, QPKG
+packages/zot/build/Zot_2.1.22_x86_64.qpkg   65.4 MB   (unsigned)
 ```
 
-Contents verified by decompressing the archives inside the package, and the service
-script exercised end-to-end against a fake root (start, push, rotate, stop).
-**Not installed on the NAS yet, and unsigned.**
+Verified end to end: `skopeo copy` push → catalog/tags/manifest digest identical to
+source → pull back → inspect. Service script exercised against a fake root for
+start, readiness, rotate and stop, plus on the real NAS.
 
 Build with:
 
@@ -51,6 +52,17 @@ scripts/fetch-zot.sh      # payload, sha256-verified against upstream checksums
 scripts/make-icons.sh /path/to/logo512.png packages/zot/icons   # optional, icons are committed
 scripts/build-qpkg.sh
 ```
+
+## Docs
+
+| Doc | What it answers |
+|---|---|
+| [troubleshooting.md](docs/troubleshooting.md) | **Start here when it breaks.** Symptom → cause → fix, from real failures |
+| [qpkg-spec.md](docs/qpkg-spec.md) | The format: layout, `qpkg.cfg` keys, hook asymmetry, `qbuild`, build-host gotchas |
+| [zot-config.md](docs/zot-config.md) | Which extensions and why; the `cve` trap; logging and rotation |
+| [zot-storage.md](docs/zot-storage.md) | Where blobs live, install volume vs storage volume, uninstall semantics |
+| [static-linking.md](docs/static-linking.md) | Why the upstream binary runs on glibc 2.21 unmodified (tested, not assumed) |
+| [zot-binary-notes.md](docs/zot-binary-notes.md) | Release assets, `-minimal` build, linkage, payload size |
 
 ## Decisions
 
