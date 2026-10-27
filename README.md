@@ -64,6 +64,7 @@ scripts/build-qpkg.sh
 | Storage | `${QPKG_ROOT}/data` — see [docs/zot-storage.md](docs/zot-storage.md) |
 | Install volume | Admin picks at install → `QPKG_VOLUME_SELECT="3"` |
 | Extensions | `storage`, `search`, `ui`, `metrics` — **no `sync`, no `cve`** ([zot-config.md](docs/zot-config.md)) |
+| Image sync | Done externally; the NAS never reaches upstream. Deliberate, not unfinished |
 | Logging | `level: warn`; size cap via QTS cron (10 MB, keep 3), not start-based rotation |
 | Populated by | LAN `skopeo copy` from the fedora zot, no upstream access |
 

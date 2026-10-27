@@ -26,8 +26,30 @@ Everything arrives by LAN copy from the fedora zot (`skopeo copy`, see
 - No "first pull is slow / sync timeout" failure modes.
 - Storage growth is predictable: only what we push.
 
-If pull-through is wanted later, add the `sync` block then — and only then does the
-CA bundle need verifying.
+**This is a deliberate decision, not an unfinished feature.** Images are synced from
+elsewhere; zot on the NAS is a cold backup whose only job is to start early and
+behave predictably. The bootstrap layer of the image stack should be the least clever
+component in it.
+
+#### Rejected: pull-through, so Container Station could pull locally
+
+Considered and declined. Making the NAS zot a local registry for Container Station
+apps would mean enabling `extensions.sync` with `onDemand: true`, which:
+
+- reintroduces upstream TLS (and therefore the CA-bundle question on 2015-era
+  firmware) and proxy configuration;
+- brings back the sync-timeout failure modes, where a manifest read blocks until the
+  upstream gives up;
+- couples Container Station app pulls to a daemon that must also serve as the
+  cluster's DR copy — two roles with different failure tolerances.
+
+Container Station apps should pull from the primary at `192.168.1.3:5000` over the
+LAN instead. That keeps the NAS package simple and leaves the cold copy genuinely
+cold.
+
+Add the `sync` block only if the fedora host stops being reachable and the NAS must
+serve Container Station on its own — and treat that as a design change, not a tweak.
+
 
 ### Why no `cve` block — verified trap
 
