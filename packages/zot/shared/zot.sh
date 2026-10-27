@@ -91,21 +91,48 @@ do_start(){
 
     # cd matters: relative paths in config.json resolve against cwd.
     cd "$QPKG_ROOT" || { err_msg "cannot cd to $QPKG_ROOT"; exit 1; }
-    nohup "$BIN" serve "$CFG" >>"$LOG" 2>>"$CONSOLE" &
-    echo $! > "$PIDF"
 
-    # zot binds quickly; confirm it is still alive rather than trusting the fork.
+    # Detach into a new session when possible. QTS kills the start script's
+    # process group once the script returns, which takes a plain `nohup ... &`
+    # child down with it. With setsid, $! is setsid's pid (it exits), so the
+    # child writes its own pid and then execs in place to keep that pid.
+    if command -v setsid >/dev/null 2>&1; then
+        setsid /bin/sh -c 'echo $$ > "$1"; exec "$2" serve "$3"' sh \
+            "$PIDF" "$BIN" "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
+    else
+        nohup "$BIN" serve "$CFG" </dev/null >>"$LOG" 2>>"$CONSOLE" &
+        echo $! > "$PIDF"
+    fi
+
+    # Do not judge liveness on the first instant: between fork and exec the pid
+    # exists but its /proc cmdline is still the shell, so a naive check reports
+    # failure on a perfectly healthy start. Wait for the pid file, and tell
+    # "still starting" apart from "died".
     _n=0
-    while [ $_n -lt 10 ]; do
-        if ! is_running; then
-            err_msg "zot exited immediately; see $CONSOLE"
-            tail -20 "$CONSOLE" 2>/dev/null
-            rm -f "$PIDF"
-            exit 1
+    _dead=0
+    while [ "$_n" -lt 15 ]; do
+        is_running && break
+        if [ -s "$PIDF" ]; then
+            _pid=$(cat "$PIDF" 2>/dev/null)
+            if [ -n "$_pid" ] && ! kill -0 "$_pid" 2>/dev/null; then
+                _dead=1
+                break
+            fi
         fi
-        sleep 0.5
+        sleep 1
         _n=$((_n + 1))
     done
+
+    if ! is_running; then
+        if [ "$_dead" -eq 1 ]; then
+            err_msg "zot exited during startup; see $CONSOLE"
+        else
+            err_msg "zot did not become ready within 15s"
+        fi
+        tail -n 20 "$CONSOLE" 2>/dev/null
+        rm -f "$PIDF"
+        exit 1
+    fi
 
     log_msg "started (pid $(cat "$PIDF"))"
 }
@@ -121,9 +148,9 @@ do_stop(){
     kill "$_pid" 2>/dev/null
 
     _n=0
-    while [ $_n -lt 20 ]; do
+    while [ "$_n" -lt 25 ]; do
         kill -0 "$_pid" 2>/dev/null || break
-        sleep 0.5
+        sleep 1
         _n=$((_n + 1))
     done
 
