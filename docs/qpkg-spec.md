@@ -253,6 +253,24 @@ offset  24740 .. N-100     gzip: the data payload for that architecture
 Decompress each gzip stream independently and list the tar members; that is
 unambiguous proof of what the package contains and with what modes.
 
+### 4. Builds are not bit-reproducible
+
+Two consecutive builds from identical inputs produce **different `.qpkg` hashes and
+differ by ~2 bytes**, while every file inside the package is byte-identical.
+
+Cause: `qbuild` assembles the data archive in a fresh temp directory, and the tar's
+`./` directory entry carries that directory's mtime. Its tar header changes per build,
+which shifts gzip output by a couple of bytes. The package header then embeds that
+length (`f.seek(<len>)`, `expr $offset + <len>`), and the 100-byte trailer carries a
+value derived from it, so the whole file differs.
+
+Consequences:
+
+- Verify a build by **content** (extract and hash the members), not by comparing
+  `.qpkg` hashes.
+- A published hash is valid for that exact artifact only. Do not document a hash as if
+  it were reproducible from source.
+
 ## Signing
 
 - GPG: `--sign`, keyring at `/etc/config/qpkg.gpg` by default, `--import-key`,
