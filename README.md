@@ -33,7 +33,21 @@ scripts/      Cross-package helpers (build, inspect, verify)
 
 ## Status
 
-Spec notes landed. No packages built yet.
+`packages/zot/` builds a working `.qpkg`:
+
+```
+packages/zot/build/Zot_2.1.22_x86_64.qpkg   65.4 MB
+```
+
+Contents verified by decompressing the archives inside the package, and the service
+script exercised end-to-end against a fake root (start, push, rotate, stop).
+**Not installed on the NAS yet, and unsigned.**
+
+Build with:
+
+```sh
+scripts/fetch-zot.sh && scripts/build-qpkg.sh
+```
 
 ## Decisions
 

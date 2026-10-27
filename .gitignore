@@ -6,6 +6,19 @@ build/
 *.qdkorig
 *.qdksave
 
+# QDK source tree (upstream, not vendored)
+.tools/
+
+# Per-arch binary payload — fetched by scripts/fetch-zot.sh, never committed
+packages/*/x86_64/*
+packages/*/arm_64/*
+packages/*/x86/*
+packages/*/arm-x41/*
+!packages/*/x86_64/.gitkeep
+!packages/*/arm_64/.gitkeep
+!packages/*/x86/.gitkeep
+!packages/*/arm-x41/.gitkeep
+
 # OS noise
 .DS_Store
 __pycache__/

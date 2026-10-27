@@ -1,0 +1,33 @@
+{
+  "distSpecVersion": "1.1.1",
+  "http": {
+    "address": "0.0.0.0",
+    "port": "5050",
+    "realm": "zot"
+  },
+  "storage": {
+    "rootDirectory": "data/storage",
+    "commit": true,
+    "dedupe": true,
+    "gc": true,
+    "gcDelay": "168h",
+    "gcInterval": "24h"
+  },
+  "log": {
+    "level": "warn"
+  },
+  "extensions": {
+    "search": {
+      "enable": true
+    },
+    "ui": {
+      "enable": true
+    },
+    "metrics": {
+      "enable": true,
+      "prometheus": {
+        "path": "/metrics"
+      }
+    }
+  }
+}

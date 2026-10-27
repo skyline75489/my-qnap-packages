@@ -191,6 +191,68 @@ qbuild [--root DIR] [--create-env NAME] [--build-arch ARCH] [--build-version V]
 QDK itself installs as a QPKG or a Debian package
 (`qdk_2.5.3_<platform>.deb`), and puts `qbuild` at `/usr/share/QDK/bin`.
 
+## Building on a Linux host (not on the NAS)
+
+QDK ships as a `.deb` and as a QPKG. Neither installs cleanly on Fedora, but the
+source tree works directly with three adjustments.
+
+### 1. Point qbuild at the repo's layout
+
+`qbuild` derives `QDK_PATH` from its own location and then expects
+`$QDK_PATH/scripts` and `$QDK_PATH/template`. The **repo** stores those under
+`shared/`, so both must be set explicitly:
+
+```sh
+export QDK_SCRIPTS_DIR=$QDK/shared/scripts
+export QDK_TEMPLATE_DIR=$QDK/shared/template
+```
+
+### 2. Compile `qpkg_encrypt`, or the package ships without its checksum
+
+`qbuild` ends with:
+
+```sh
+add_qpkg_encryption(){
+    if [ -x "/sbin/qpkg" ]; then
+        /sbin/qpkg --encrypt $QDK_QPKG_FILE
+    else
+        qpkg_encrypt $QDK_QPKG_FILE          # <-- needs to be on PATH
+    fi
+}
+```
+
+On a NAS, `/sbin/qpkg` provides this. On a Linux build host neither exists, and the
+failure is **non-fatal** — `qbuild` still reports success and writes the `.qpkg`
+without the 100-byte checksum trailer. Build it once:
+
+```sh
+cd $QDK/src && make            # produces src/bin/qpkg_encrypt
+export PATH=$QDK/src/bin:$PATH
+```
+
+Symptom if skipped: no explicit error beyond `qpkg_encrypt: command not found`, and a
+package QTS may refuse to install.
+
+### 3. `qbuild --extract` truncates large data archives
+
+On a package with the checksum trailer, `--extract` writes a `data.tar.gz` that is
+short by a few KB — `gzip -t` fails with `unexpected end of file`. **The package
+itself is fine**; only the extractor is unreliable. Do not treat a failed extract as
+evidence of a broken build.
+
+Verify by walking the container directly. A `.qpkg` is a shell header followed by two
+concatenated gzip streams (control, then data) and a trailer:
+
+```
+offset      0 .. 4772      shell header (installer stub + arch check)
+offset   4772 .. 17163     gzip: qinstall.sh, package_routines, qpkg.cfg, md5sum, built_info
+offset  24740 .. N-100     gzip: the data payload for that architecture
+             N-100 .. N    100-byte checksum trailer
+```
+
+Decompress each gzip stream independently and list the tar members; that is
+unambiguous proof of what the package contains and with what modes.
+
 ## Signing
 
 - GPG: `--sign`, keyring at `/etc/config/qpkg.gpg` by default, `--import-key`,
