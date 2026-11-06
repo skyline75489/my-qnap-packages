@@ -46,12 +46,26 @@ Verified end to end: `skopeo copy` push → catalog/tags/manifest digest identic
 source → pull back → inspect. Service script exercised against a fake root for
 start, readiness, rotate and stop, plus on the real NAS.
 
+**Built, not yet installed** — a file-list / storage gateway, same native-binary
+approach:
+
+```
+http://192.168.1.40:5244        OpenList 4.2.9, QTS 5.2.9, QPKG (not installed)
+packages/openlist/build/OpenList_4.2.9_x86_64.qpkg   53.5 MB   (unsigned)
+```
+
+Static musl binary, embedded frontend, sqlite storage under the chosen volume.
+Details: [docs/openlist.md](docs/openlist.md).
+
 Build with:
 
 ```sh
 scripts/fetch-zot.sh      # payload, sha256-verified against upstream checksums
 scripts/make-icons.sh /path/to/logo512.png packages/zot/icons   # optional, icons are committed
 scripts/build-qpkg.sh
+
+scripts/fetch-openlist.sh     # payload, md5-verified against upstream + our sha256 pin
+scripts/build-qpkg.sh openlist
 ```
 
 ## Working on this repo
@@ -66,18 +80,21 @@ Quick map:
 |---|---|
 | [docs/troubleshooting.md](docs/troubleshooting.md) | start here when something is broken |
 | [docs/qpkg-spec.md](docs/qpkg-spec.md) | the QPKG format and build host behaviour |
-| [docs/zot-*.md](docs/) | this package's config, storage, linkage decisions |
-| [packages/zot/README.md](packages/zot/README.md) | what's inside the package |
+| [docs/zot-*.md](docs/) | the zot package's config, storage, linkage decisions |
+| [docs/openlist.md](docs/openlist.md) | the OpenList package: env vars, config, first start |
+| [packages/zot/README.md](packages/zot/README.md) | what's inside the zot package |
+| [packages/openlist/README.md](packages/openlist/README.md) | what's inside the OpenList package |
 
 ## Decisions
 
 | Item | Value |
 |---|---|
 | Target arch | `x86_64` |
-| Listen port | `5050` — 5000 is taken by the QTS portal |
+| Listen port | `5050` (zot) — 5000 is taken by the QTS portal; `5244` (OpenList) |
 | NAS loader | glibc 2.21 (`ld-linux-x86-64.so.2 -> ld-2.21.so`) — QTS pins it deliberately |
 | QTS version | 5.2.9 (so `QTS_MINI_VERSION="5.0.0"` is correct) |
 | zot payload | Upstream `zot-linux-amd64` v2.1.22 prebuilt — verified against glibc 2.21 |
+| OpenList payload | Upstream `openlist-linux-musl-amd64` v4.2.9 — statically linked, libc-independent |
 | Storage | `${QPKG_ROOT}/data` — see [docs/zot-storage.md](docs/zot-storage.md) |
 | Install volume | Admin picks at install → `QPKG_VOLUME_SELECT="3"` |
 | Extensions | `storage`, `search`, `ui`, `metrics` — **no `sync`, no `cve`** ([zot-config.md](docs/zot-config.md)) |

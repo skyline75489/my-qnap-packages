@@ -5,11 +5,15 @@ is the map. Details live in `docs/`.
 
 ## What this repo is
 
-Builds QPKG packages for a QNAP NAS (QTS 5.2.9). One package today: **zot**, an OCI
-registry deployed as the K3s cluster's **cold backup** at `192.168.1.40:5050`. The
-primary registry is the fedora host at `192.168.1.3:5000`.
+Builds QPKG packages for a QNAP NAS (QTS 5.2.9). Two packages today:
 
-The point of the package is that it needs no Container Station and no runtime
+- **zot**, an OCI registry deployed as the K3s cluster's **cold backup** at
+  `192.168.1.40:5050`. The primary registry is the fedora host at
+  `192.168.1.3:5000`.
+- **OpenList**, a file-list / storage gateway at `192.168.1.40:5244`. Built, not
+  yet installed on the NAS.
+
+The point of the packages is that they need no Container Station and no runtime
 downloads: a registry that boots from an image registry is circular, so it ships as a
 static binary that QTS starts directly.
 
@@ -41,6 +45,9 @@ scripts/build-qpkg.sh       # builds; its output alone proves nothing
 scripts/test-package.sh     # 33 assertions: structure, runtime, detach branches
 ```
 
+For the OpenList package the same three steps are `scripts/fetch-openlist.sh`,
+`scripts/build-qpkg.sh openlist` and `scripts/test-openlist.sh` (43 assertions).
+
 `test-package.sh` is the real gate. It plants the payload in a fake root with stubbed
 QTS helpers (`/sbin/getcfg`, `/sbin/write_log`) and drives the actual service script:
 start → readiness → `/v2/` `/` `/metrics` → status → rotate → stop. It runs twice, the
@@ -48,6 +55,10 @@ second time with a `PATH` containing no `setsid`, which is the regression test f
 bug that cost three round trips on the real NAS.
 
 Anything not covered there must be stated as unverified, not implied.
+
+**Do not let the test scripts inherit `PORT` from the environment.** A dev host
+often has `PORT` set to something else; the tests would then talk to a foreign
+service and report nonsense failures. Both test scripts use `TEST_PORT`.
 
 ## Doc map
 
@@ -59,15 +70,19 @@ Anything not covered there must be stated as unverified, not implied.
 | **docs/zot-storage.md** | Storage paths, install volume vs storage volume, uninstall semantics |
 | **docs/static-linking.md** | Why the upstream binary runs on glibc 2.21 unmodified (measured, not assumed) |
 | **docs/zot-binary-notes.md** | Release assets, the `-minimal` build, linkage, payload size |
-| **packages/zot/README.md** | What's inside the package and how the service script behaves |
+| **docs/openlist.md** | The OpenList package: env vars, config paths, first start, licensing |
+| **packages/zot/README.md** | What's inside the zot package and how the service script behaves |
+| **packages/openlist/README.md** | What's inside the OpenList package and how the service script behaves |
 
 ## Commands
 
 ```sh
 scripts/fetch-zot.sh                     # payload -> packages/zot/x86_64/zot (sha256-checked)
-scripts/make-icons.sh <logo.png> <dir>   # regenerate App Center icons (icons/ is committed)
-scripts/build-qpkg.sh                    # qbuild --strict; needs .tools/QDK
-scripts/test-package.sh [pkg.qpkg]       # verify without a NAS
+scripts/fetch-openlist.sh                # payload -> packages/openlist/x86_64/openlist (md5 + sha256)
+scripts/make-icons.sh <logo.png> <dir> [name]   # regenerate App Center icons (icons/ is committed)
+scripts/build-qpkg.sh [package]          # qbuild --strict; needs .tools/QDK
+scripts/test-package.sh [pkg.qpkg]       # verify the zot package without a NAS
+scripts/test-openlist.sh [pkg.qpkg]      # verify the OpenList package without a NAS
 scripts/debug-zot-qpkg.sh                # READ-ONLY, runs ON the NAS as root
 ```
 
@@ -97,6 +112,13 @@ packages/zot/
   package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
   shared/             config.json, zot.sh -> installed at $QPKG_ROOT
   icons/              Zot.gif 64x64, Zot_gray.gif 64x64, Zot_80.gif 80x80
+  x86_64/             payload (gitignored)
+
+packages/openlist/
+  qpkg.cfg            metadata (name <=20 chars, version <=10)
+  package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
+  shared/             openlist.sh -> installed at $QPKG_ROOT
+  icons/              OpenList.gif 64x64, OpenList_gray.gif 64x64, OpenList_80.gif 80x80
   x86_64/             payload (gitignored)
 ```
 

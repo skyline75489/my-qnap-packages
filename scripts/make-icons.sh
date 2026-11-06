@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
-# Generate the three App Center icons from the upstream zot logo.
+# Generate the three App Center icons from an upstream logo.
 #
 # QTS expects GIFs named exactly after QPKG_NAME:
-#   Zot.gif        64x64  enabled state
-#   Zot_gray.gif   64x64  disabled state
-#   Zot_80.gif     80x80  info dialog
+#   <NAME>.gif        64x64  enabled state
+#   <NAME>_gray.gif   64x64  disabled state
+#   <NAME>_80.gif     80x80  info dialog
 #
-# Source: project-zot/zui public/logo512.png (Apache-2.0), a dark mark on a
-# transparent background. Flattened onto white because App Center renders these
-# as tiles, and a transparent dark mark disappears on a dark theme.
+# Usage: make-icons.sh <source-logo.png> <outdir> [name]
+#
+# The name defaults to Zot. Source logos:
+#   Zot      project-zot/zui public/logo512.png (Apache-2.0)
+#   OpenList OpenListTeam/Logo logo/256x256.png (CC BY-NC-SA 4.0)
+# Both are a mark on a transparent background. Flattened onto white because
+# App Center renders these as tiles, and a transparent dark mark disappears
+# on a dark theme.
 set -euo pipefail
 
-SRC="${1:?usage: make-icons.sh <source-logo.png> <outdir>}"
-OUT="${2:?usage: make-icons.sh <source-logo.png> <outdir>}"
+SRC="${1:?usage: make-icons.sh <source-logo.png> <outdir> [name]}"
+OUT="${2:?usage: make-icons.sh <source-logo.png> <outdir> [name]}"
+NAME="${3:-Zot}"
 mkdir -p "$OUT"
 
 TMP=$(mktemp -d)
@@ -32,11 +38,11 @@ square() { # $1=size $2=out
         -colors 255 -type Palette "$2"
 }
 
-square 64 "$OUT/Zot.gif"
-square 80 "$OUT/Zot_80.gif"
+square 64 "$OUT/$NAME.gif"
+square 80 "$OUT/${NAME}_80.gif"
 
 # Disabled state: greyscale of the same artwork.
-magick "$OUT/Zot.gif" -colorspace Gray -colors 255 -type Palette "$OUT/Zot_gray.gif"
+magick "$OUT/$NAME.gif" -colorspace Gray -colors 255 -type Palette "$OUT/${NAME}_gray.gif"
 
 for f in "$OUT"/*.gif; do
     printf "%-16s %s  %s\n" "$(basename "$f")" \

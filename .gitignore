@@ -2,6 +2,9 @@
 build/
 *.qpkg
 
+# Test scratch directory (scripts/test-*.sh WORKDIR=...)
+.tmp-test/
+
 # qbuild working files
 *.qdkorig
 *.qdksave

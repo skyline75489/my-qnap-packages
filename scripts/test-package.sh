@@ -23,7 +23,11 @@ if [ -z "$QPKG" ]; then
 fi
 [ -f "$QPKG" ] || { echo "no .qpkg found; run scripts/build-qpkg.sh first" >&2; exit 1; }
 
-PORT=${PORT:-5099}          # deliberately not 5050: never fight a live registry
+# Deliberately NOT $PORT: the environment of a build host often has PORT set
+# to something else (a dev server), and inheriting it would point the test
+# at a foreign service. 5099 is deliberately not 5050: never fight a live
+# registry.
+TEST_PORT=${TEST_PORT:-5099}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
@@ -84,7 +88,7 @@ run_phase(){ # $1=label  $2=PATH to use
     cp "$R"/zot "$R"/zot.sh "$R"/config.json "$root/"
 
     # point the test config at a free port and a relative store
-    python3 - "$root/config.json" "$PORT" <<'PY'
+    python3 - "$root/config.json" "$TEST_PORT" <<'PY'
 import json,sys
 p,port=sys.argv[1],sys.argv[2]
 c=json.load(open(p)); c["http"]["port"]=port; c["http"]["address"]="127.0.0.1"
@@ -96,7 +100,7 @@ PY
 case "\$2" in
   Install_Path) echo "$root" ;;
   Enable)       echo "TRUE" ;;
-  Web_Port)     echo "$PORT" ;;
+  Web_Port)     echo "$TEST_PORT" ;;
 esac
 EOF
     printf '#!/bin/sh\nexit 0\n' > "$bin/write_log"
@@ -113,9 +117,9 @@ EOF
     grep -q 'detach method' "$bin/start.out" && ok "reports detach method: $(sed -n 's/.*detach method: //p' "$bin/start.out" | tail -1)" \
         || no "no detach method logged"
 
-    chk "GET /v2/" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v2/")" "200"
-    chk "GET /ui "   "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/")" "200"
-    chk "GET /metrics" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/metrics")" "200"
+    chk "GET /v2/" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/v2/")" "200"
+    chk "GET /ui "   "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/")" "200"
+    chk "GET /metrics" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/metrics")" "200"
 
     local pid; pid=$(cat "$root/data/zot.pid" 2>/dev/null)
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then ok "pid alive ($pid)"; else no "pid not alive"; fi
@@ -134,7 +138,7 @@ EOF
     sleep 1
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then no "still alive after stop"; else ok "stopped cleanly"; fi
     [ -f "$root/data/zot.pid" ] && no "pid file left behind" || ok "pid file removed"
-    local after; after=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v2/" 2>/dev/null)
+    local after; after=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/v2/" 2>/dev/null)
     # curl prints 000 and exits non-zero on a closed port; don't append another
     [ -n "$after" ] || after=000
     chk "port released" "$after" "000"
