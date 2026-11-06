@@ -62,6 +62,32 @@ sh "$(/sbin/getcfg Backrest Install_Path -f /etc/config/qpkg.conf)/backrest.sh" 
 
 App Center has no dedicated restart button; stop and start are two clicks.
 
+### Backup fails with "no space left on device"
+
+**Cause:** QTS's `/tmp` is a small tmpfs, and restic writes its in-progress pack
+files to `os.TempDir()` while a backup runs (restic
+`internal/repository/packer_manager.go`: `fs.TempFile("", "restic-temp-pack-")`).
+A backup that outgrows the tmpfs dies **while saving the snapshot**:
+
+```
+Fatal: unable to save snapshot: Write: write /tmp/restic-temp-pack-37230858: no space left on device
+```
+
+No snapshot is created, so it reads like a repository fault rather than a
+disk-space one.
+
+**Confirm:**
+
+```sh
+df -h /tmp          # the tmpfs is the one that filled up
+```
+
+**Fix:** point `TMPDIR` at a real volume. restic 0.19.1 has **no** `--temp-dir`
+flag, so the environment is the only knob — and it works because the parent
+process's environment is inherited by the restic subprocess. The Backrest package
+sets `TMPDIR=$QPKG_ROOT/data/tmp` for exactly this reason; per repository, the
+Backrest UI's *Environment variables* field sets it for one repo only.
+
 ### Installed fine, port refuses connections
 
 **Cause:** the start script exited non-zero, and **QTS records a failed start as

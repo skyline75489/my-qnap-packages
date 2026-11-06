@@ -154,6 +154,24 @@ EOF
     local pid; pid=$(cat "$root/data/backrest.pid" 2>/dev/null)
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then ok "pid alive ($pid)"; else no "pid not alive"; fi
 
+    # TMPDIR must point off QTS's small tmpfs. restic writes its in-progress
+    # pack files to os.TempDir(), so a backup that outgrows /tmp dies with
+    # "no space left on device" while saving the snapshot. Assert on the
+    # running process's environment, not on the script's text.
+    if [ -n "$pid" ] && [ -r "/proc/$pid/environ" ]; then
+        local tmpdir
+        tmpdir=$(tr '\0' '\n' < "/proc/$pid/environ" | sed -n 's/^TMPDIR=//p')
+        chk "TMPDIR is set" "$([ -n "$tmpdir" ] && echo set || echo unset)" "set"
+        # Compare against the system temp dir by value: the fake root lives
+        # under /tmp here, so a path-prefix test would be meaningless.
+        chk "TMPDIR is not the system temp dir" \
+            "$([ "$tmpdir" != "/tmp" ] && [ "$tmpdir" != "${TMPDIR:-}" ] && echo yes || echo no)" "yes"
+        chk "TMPDIR is inside the package" "$(case "$tmpdir" in "$root"/*) echo yes ;; *) echo no ;; esac)" "yes"
+    else
+        no "could not read /proc/$pid/environ"
+    fi
+    [ -d "$root/data/tmp" ] && ok "temp dir created" || no "temp dir missing"
+
     PATH="$path" "$bin/svc.sh" status >/dev/null 2>&1 && ok "status reports running" || no "status says not running"
 
     # rotate: pad past the 10 MB ceiling, expect a rotation; then expect no second one

@@ -141,6 +141,11 @@ have actually bitten.
   `objdump -T <binary> | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -3`; every symbol
   must be ≤ 2.21.
 - **Port 5000 is the QTS portal.** Packages here use 5050, 5244 and 9898.
+- **`/tmp` is a small tmpfs.** Anything that writes temporary files has to be
+  pointed elsewhere — `TMPDIR` for a program that respects it, an explicit cache
+  directory otherwise. restic writes its in-progress pack files to `os.TempDir()`,
+  so a backup that outgrows the tmpfs dies with "no space left on device" while
+  saving the snapshot. See `docs/troubleshooting.md`.
 - **QTS has no `systemd`, no `nohup`, and often no `setsid` on `PATH`.** Daemonising
   means probing absolute paths for `setsid`, then `/bin/busybox setsid`, then
   `sh -c` with `trap '' HUP`. Never rely on `command -v` alone.

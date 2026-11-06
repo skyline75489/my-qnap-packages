@@ -56,8 +56,12 @@ dependency of the test harness.
 - The bundled restic must be present and executable, else start fails. It never
   falls back to letting backrest download one.
 - All paths handed to the app are absolute and inside `$QPKG_ROOT`
-  (`BACKREST_CONFIG`, `BACKREST_DATA`, `RESTIC_CACHE_DIR`, `HOME`), so they stay
-  valid across a volume migration.
+  (`BACKREST_CONFIG`, `BACKREST_DATA`, `RESTIC_CACHE_DIR`, `TMPDIR`, `HOME`), so
+  they stay valid across a volume migration.
+- `TMPDIR` points at `$QPKG_ROOT/data/tmp`. QTS's `/tmp` is a small tmpfs and
+  restic writes its in-progress pack files there — a backup that outgrows it dies
+  with "no space left on device" while saving the snapshot. restic has no
+  `--temp-dir` flag, so the environment is the only knob.
 - `BACKREST_PORT=":$PORT"` — the upstream default is `127.0.0.1:9898`, which is
   unreachable from a browser on the LAN.
 - It waits for the **listen socket**, not just the pid: QTS returns from `start` and

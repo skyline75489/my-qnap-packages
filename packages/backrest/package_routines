@@ -17,6 +17,9 @@ pkg_install(){
     $CMD_MKDIR -p "$SYS_QPKG_DIR/data/log"
     $CMD_MKDIR -p "$SYS_QPKG_DIR/data/home"
     $CMD_MKDIR -p "$SYS_QPKG_DIR/data/restic-cache"
+    # TMPDIR for restic: QTS's /tmp is a small tmpfs and restic writes its
+    # in-progress pack files there.
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/data/tmp"
 }
 
 pkg_post_install(){

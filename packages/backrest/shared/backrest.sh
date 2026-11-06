@@ -88,7 +88,7 @@ do_start(){
         exit 1
     fi
 
-    mkdir -p "$LOGDIR" "$DATA/home" "$DATA/restic-cache" || {
+    mkdir -p "$LOGDIR" "$DATA/home" "$DATA/restic-cache" "$DATA/tmp" || {
         err_msg "cannot create $DATA"
         exit 1
     }
@@ -108,10 +108,17 @@ do_start(){
     BACKREST_PORT=":$PORT"
     BACKREST_RESTIC_COMMAND="$RESTIC"
     RESTIC_CACHE_DIR="$DATA/restic-cache"
+    # QTS's /tmp is a small tmpfs. restic writes its in-progress pack files
+    # there (fs.TempFile("", "restic-temp-pack-") -> os.TempDir()), and a
+    # backup that outgrows /tmp dies with "no space left on device" while
+    # saving the snapshot. Point TMPDIR at the volume instead. restic has no
+    # --temp-dir flag; TMPDIR is the only knob, and it is inherited by the
+    # restic subprocess because Backrest passes its own environment through.
+    TMPDIR="$DATA/tmp"
     XDG_CONFIG_HOME="$DATA/home/.config"
     XDG_CACHE_HOME="$DATA/home/.cache"
     export HOME BACKREST_CONFIG BACKREST_DATA BACKREST_PORT BACKREST_RESTIC_COMMAND
-    export RESTIC_CACHE_DIR XDG_CONFIG_HOME XDG_CACHE_HOME
+    export RESTIC_CACHE_DIR TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME
 
     # The UI has no authentication until a user is created in its settings.
     # Say so once per start rather than leaving it to be discovered.

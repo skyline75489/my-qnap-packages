@@ -75,7 +75,57 @@ backup data lives wherever the user pointed restic (outside the QPKG directory).
 The configuration does not live there, so a reinstall keeps the repository
 definitions — but only if the config is handled by `QPKG_CONFIG`, which is why it is.
 
-## Authentication
+## QTS's /tmp is small — restic needs TMPDIR
+
+restic writes its **in-progress pack files** to the system temporary directory while
+a backup is running:
+
+```go
+// restic internal/repository/packer_manager.go
+tmpfile, err := fs.TempFile("", "restic-temp-pack-")   // -> os.CreateTemp("", ...)
+```
+
+`os.CreateTemp` with an empty directory uses `os.TempDir()`, which is `$TMPDIR` if it
+is set and `/tmp` otherwise. On QTS, `/tmp` is a small tmpfs — a backup that outgrows
+it dies like this:
+
+```
+Fatal: unable to save snapshot: Write: write /tmp/restic-temp-pack-37230858: no space left on device
+```
+
+The snapshot is never created, so it reads like a repository problem rather than a
+disk-space one. Check `df -h /tmp` before believing the repository.
+
+**The fix is `TMPDIR`.** restic 0.19.1 has no `--temp-dir` flag (`unknown flag:
+--temp-dir`), so the environment is the only knob — and it works, because Backrest
+passes its own environment to the restic subprocess (`restic.WithEnviron()`).
+
+This package therefore sets, in the service script:
+
+| Variable | Value | Why |
+|---|---|---|
+| `TMPDIR` | `$QPKG_ROOT/data/tmp` | The temp packs land on the storage volume, not the tmpfs |
+| `RESTIC_CACHE_DIR` | `$QPKG_ROOT/data/restic-cache` | The cache is also real data, and it is large |
+
+Verified on the build host by pointing `TMPDIR` at a read-only directory, which
+reproduces the failure exactly:
+
+```
+Fatal: unable to save snapshot: open /tmp/rt2/ro/restic-temp-pack-68815701: permission denied
+```
+
+and with a writable `TMPDIR` the same backup completes.
+
+**Per repo**, the Backrest UI exposes *Environment variables* on each repository
+(`Repo.env`, applied as `restic.WithEnv`). That is the knob to use when the temp
+files should live on a *different* volume from the package — for example a
+dedicated cache volume:
+
+```
+TMPDIR=/share/CACHEDEV1_DATA/.restic-tmp
+```
+
+Per-repo `flags` cannot solve this: restic has no `--temp-dir`.
 
 Upstream ships with authentication **disabled**, and the default config here keeps
 that. The API can delete backups, so this matters: the service script logs a warning
