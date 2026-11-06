@@ -1,0 +1,10 @@
+{
+  "version": 6,
+  "instance": "backrest",
+  "repos": [],
+  "plans": [],
+  "auth": {
+    "disabled": true
+  },
+  "sync": {}
+}

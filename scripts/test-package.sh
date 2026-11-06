@@ -19,7 +19,9 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QPKG="${1:-}"
 if [ -z "$QPKG" ]; then
-    QPKG=$(ls -1t "$REPO_ROOT"/packages/*/build/*.qpkg 2>/dev/null | head -1)
+    # Scoped to this package: a repo-wide glob picks whichever package was
+    # built last, which silently tests the wrong payload.
+    QPKG=$(ls -1t "$REPO_ROOT"/packages/zot/build/*.qpkg 2>/dev/null | head -1)
 fi
 [ -f "$QPKG" ] || { echo "no .qpkg found; run scripts/build-qpkg.sh first" >&2; exit 1; }
 

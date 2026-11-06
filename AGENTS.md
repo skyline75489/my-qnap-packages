@@ -5,13 +5,15 @@ is the map. Details live in `docs/`.
 
 ## What this repo is
 
-Builds QPKG packages for a QNAP NAS (QTS 5.2.9). Two packages today:
+Builds QPKG packages for a QNAP NAS (QTS 5.2.9). Three packages today:
 
 - **zot**, an OCI registry deployed as the K3s cluster's **cold backup** at
   `192.168.1.40:5050`. The primary registry is the fedora host at
   `192.168.1.3:5000`.
 - **OpenList**, a file-list / storage gateway at `192.168.1.40:5244`. Built, not
   yet installed on the NAS.
+- **Backrest**, a restic backup orchestrator with a web UI at
+  `192.168.1.40:9898`. Built, not yet installed on the NAS.
 
 The point of the packages is that they need no Container Station and no runtime
 downloads: a registry that boots from an image registry is circular, so it ships as a
@@ -33,13 +35,14 @@ belongs in Container Station — say so rather than building it.
    the bootstrap layer free of upstream TLS and proxy concerns; the `cve` block forces
    2h scanning and a 3.1 GB Trivy DB even when set to `0`.
 3. **Never commit the payload, `build/`, or `.tools/`.** All gitignored. Check
-   `git status` before committing; the payload alone is 226 MB.
+   `git status` before committing; the zot payload alone is 226 MB.
 4. **Do not trust `qbuild`'s success output.** It reports success for packages missing
    their checksum, and its `--extract` corrupts large archives. Verify per the
    standard below.
 5. **Data under `$QPKG_ROOT/data` dies on uninstall** (`rsync --delete` + `rm -rf`).
-   That is intentional for this package (the store is a repopulatable cache), but never
-   put anything there that cannot be rebuilt.
+   That is intentional for these packages (caches and rebuildable state), but never
+   put anything there that cannot be rebuilt. User configuration and credentials
+   belong next to the service script, protected by `QPKG_CONFIG`.
 
 ## Verification standard
 
@@ -53,12 +56,15 @@ scripts/test-package.sh     # 33 assertions: structure, runtime, detach branches
 
 For the OpenList package the same three steps are `scripts/fetch-openlist.sh`,
 `scripts/build-qpkg.sh openlist` and `scripts/test-openlist.sh` (43 assertions).
+For the Backrest package: `scripts/fetch-backrest.sh`,
+`scripts/build-qpkg.sh backrest` and `scripts/test-backrest.sh` (45 assertions).
 
-`test-package.sh` is the real gate. It plants the payload in a fake root with stubbed
-QTS helpers (`/sbin/getcfg`, `/sbin/write_log`) and drives the actual service script:
-start → readiness → `/v2/` `/` `/metrics` → status → rotate → stop. It runs twice, the
-second time with a `PATH` containing no `setsid`, which is the regression test for the
-bug that cost three round trips on the real NAS.
+`test-package.sh` is the real gate, and so are its siblings for the other
+packages. Each plants the payload in a fake root with stubbed QTS helpers
+(`/sbin/getcfg`, `/sbin/write_log`) and drives the actual service script:
+start → readiness → the app's own HTTP surface → status → rotate → stop. Each runs
+twice, the second time with a `PATH` containing no `setsid`, which is the regression
+test for the bug that cost three round trips on the real NAS.
 
 Anything not covered there must be stated as unverified, not implied.
 
@@ -78,18 +84,22 @@ service and report nonsense failures. Both test scripts use `TEST_PORT`.
 | **docs/static-linking.md** | Why the upstream binary runs on glibc 2.21 unmodified (measured, not assumed) |
 | **docs/zot-binary-notes.md** | Release assets, the `-minimal` build, linkage, payload size |
 | **docs/openlist.md** | The OpenList package: env vars, config paths, first start, licensing |
+| **docs/backrest.md** | The Backrest package: why restic is bundled, ports, paths, authentication |
 | **packages/zot/README.md** | What's inside the zot package and how the service script behaves |
 | **packages/openlist/README.md** | What's inside the OpenList package and how the service script behaves |
+| **packages/backrest/README.md** | What's inside the Backrest package and how the service script behaves |
 
 ## Commands
 
 ```sh
 scripts/fetch-zot.sh                     # payload -> packages/zot/x86_64/zot (sha256-checked)
 scripts/fetch-openlist.sh                # payload -> packages/openlist/x86_64/openlist (md5 + sha256)
+scripts/fetch-backrest.sh                # payloads -> packages/backrest/x86_64/{backrest,restic} (sha256)
 scripts/make-icons.sh <logo.png> <dir> [name]   # regenerate App Center icons (icons/ is committed)
 scripts/build-qpkg.sh [package]          # qbuild --strict; needs .tools/QDK
 scripts/test-package.sh [pkg.qpkg]       # verify the zot package without a NAS
 scripts/test-openlist.sh [pkg.qpkg]      # verify the OpenList package without a NAS
+scripts/test-backrest.sh [pkg.qpkg]      # verify the Backrest package without a NAS
 scripts/debug-zot-qpkg.sh                # READ-ONLY, runs ON the NAS as root
 ```
 
@@ -103,7 +113,8 @@ also sets `QDK_SCRIPTS_DIR`/`QDK_TEMPLATE_DIR` because the QDK *repo* keeps them
 - **NAS is x86_64**, QTS 5.2.9, glibc **2.21** — QTS pins it deliberately, so build
   targets must not assume a newer libc. The upstream zot binary is static-PIE and
   needs only `/lib64/ld-linux-x86-64.so.2`.
-- **Port 5000 is the QTS portal.** The package uses **5050**.
+- **Port 5000 is the QTS portal.** The packages use **5050** (zot), **5244**
+  (OpenList) and **9898** (Backrest).
 - **QTS has no `systemd`, no `nohup`, and often no `setsid` on `PATH`.** Daemonising
   means probing absolute paths for `setsid`, then `/bin/busybox setsid`, then
   `sh -c` with `trap '' HUP`. Never rely on `command -v` alone.
@@ -131,6 +142,13 @@ packages/openlist/
   shared/             openlist.sh -> installed at $QPKG_ROOT
   icons/              OpenList.gif 64x64, OpenList_gray.gif 64x64, OpenList_80.gif 80x80
   x86_64/             payload (gitignored)
+
+packages/backrest/
+  qpkg.cfg            metadata (name <=20 chars, version <=10)
+  package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
+  shared/             config.json, backrest.sh -> installed at $QPKG_ROOT
+  icons/              Backrest.gif 64x64, Backrest_gray.gif 64x64, Backrest_80.gif 80x80
+  x86_64/             payloads: backrest AND restic (gitignored)
 ```
 
 `data/` is created imperatively in `pkg_install()`, never shipped, so upgrades leave it
