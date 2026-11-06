@@ -37,8 +37,9 @@ scripts/build-qpkg.sh openlist   # -> packages/openlist/build/OpenList_4.2.9_x86
 scripts/test-openlist.sh    # 43 assertions, no NAS needed
 ```
 
-`github.com` is unreliable from here — set `HTTPS_PROXY=http://192.168.1.208:8888`
-if a fetch stalls.
+`github.com` is unreliable from this build host — set `HTTPS_PROXY` if a fetch
+stalls (the proxy for this deployment is in
+[docs/nas-topology.md](../../docs/nas-topology.md)).
 
 The payload is the **musl** build (`openlist-linux-musl-amd64`), which upstream
 links statically. It therefore does not care about the NAS's glibc 2.21 at all.

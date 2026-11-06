@@ -1,118 +1,120 @@
-# my-qnap-packages
+# QNAP QPKG packaging
 
-QPKG packages, build scripts, and packaging specs for my QNAP NAS.
+How to ship a third-party service as a **QPKG** — QNAP's native package format —
+so it starts from local disk on a QTS NAS, without Container Station and without
+downloading anything at run time.
 
-## Why this exists
+This repo is the method plus three worked examples. The method is the point; the
+packages are evidence that it works.
 
-The NAS hosts services that the rest of the homelab depends on — notably a `zot`
-OCI registry used as the **cold backup** for the K3s cluster's image registry (the
-primary is the fedora host at `192.168.1.3:5000`). Those services must start from
-local disk:
+- **[AGENTS.md](AGENTS.md)** — the map: ground rules, verification standard, commands.
+- **[docs/qpkg-service-packaging.md](docs/qpkg-service-packaging.md)** — the
+  methodology: deciding QPKG vs container, auditing an upstream project, building
+  against the NAS's libc, and what a package must ship at runtime.
+- **[docs/nas-topology.md](docs/nas-topology.md)** — deployment state for one
+  particular NAS: addresses, ports, what is installed.
 
-- **No Container Station wrapper.** A container-based package needs a working
-  registry to pull its own image, which is circular when the package *is* the
-  registry. It also couples service uptime to Container Station staying healthy
-  and to images surviving an App Center reinstall.
-- **No runtime downloads.** Nothing is fetched at start time.
+## Why native packages
 
-So packages here ship a self-contained payload (a static binary) that QTS starts
-directly via its own init sequence.
+Two constraints, both non-negotiable:
+
+- **No container runtime dependency.** A container-based package needs a working
+  registry to pull its own image — circular when the package *is* the registry. It
+  also couples uptime to Container Station staying healthy and to images surviving
+  an App Center reinstall.
+- **No runtime downloads.** A NAS may be isolated, and an unattended download is an
+  unreviewed binary. If an app insists on fetching something at first start, that
+  something gets **bundled** instead.
+
+Packages here therefore ship a self-contained payload that QTS starts directly via
+its own init sequence.
+
+## The workflow
+
+```
+  decide ──▶ audit ──▶ fetch/build payload ──▶ assemble ──▶ verify ──▶ install
+```
+
+| Step | What happens | Reference |
+|---|---|---|
+| **1. Decide** | Does this belong in a QPKG at all? A service needing a database server or a multi-process runtime belongs in Container Station. Say so rather than building it. | [qpkg-service-packaging.md §1](docs/qpkg-service-packaging.md) |
+| **2. Audit** | Read the upstream project *before* designing: prebuilt binaries? CGO? External tools it shells out to? A web UI? A licence that affects redistribution? Classify every dependency as **fatal at startup**, optional, or feature-gated. | [qpkg-service-packaging.md §2](docs/qpkg-service-packaging.md) |
+| **3. Payload** | Prefer an upstream release binary that already runs on the NAS's libc. Otherwise build one against an older glibc and verify with `objdump -T`. Fetch it with a script that verifies upstream checksums. | [qpkg-service-packaging.md §3](docs/qpkg-service-packaging.md) |
+| **4. Assemble** | `qpkg.cfg`, `package_routines`, the service script, the config, the icons. Install hooks are functions; removal hooks are variables. | [qpkg-spec.md](docs/qpkg-spec.md) |
+| **5. Verify** | `qbuild` printing success proves nothing. A harness must plant the payload in a fake root and drive the real service script. | [below](#the-verification-standard) |
+| **6. Install** | Only on instruction. Installing, restarting services and touching the NAS are the user's call. | [AGENTS.md](AGENTS.md) |
+
+## The verification standard
+
+*"Done" means the harness passes, not that the build printed success.*
+
+Every package here has a `scripts/test-<name>.sh` that:
+
+1. decompresses the archives inside the built `.qpkg` and checks the members, modes
+   and payload;
+2. plants the payload in a **fake root** with stubbed QTS helpers
+   (`/sbin/getcfg`, `/sbin/write_log`) and drives the **real** service script:
+   start → readiness → the app's own HTTP surface → status → rotate → stop;
+3. runs the whole thing **twice**, the second time with a `PATH` containing no
+   `setsid`, to exercise the fallback chain.
+
+That third point is not decoration: QTS has no `systemd`, no `nohup`, and often no
+`setsid` on `PATH`, and a missing `setsid` once cost three round trips on a real
+NAS.
+
+Anything the harness does not cover must be **stated as unverified**, not implied.
+
+## Worked examples
+
+Each is a different shape of problem, which is why all three are here.
+
+| Package | Shape | What it teaches |
+|---|---|---|
+| [zot](packages/zot/README.md) | Upstream prebuilt static binary, config in JSON | The plain case: a release binary that already runs on the target libc |
+| [OpenList](packages/openlist/README.md) | Static musl binary, env-driven config, self-generated config | A config the app creates for itself must not be shipped — it would ship a known secret |
+| [Backrest](packages/backrest/README.md) | Two static binaries, the app drives a helper it would otherwise download | Bundling a dependency so the package never reaches out at run time |
+
+| | |
+|---|---|
+| [docs/troubleshooting.md](docs/troubleshooting.md) | start here when something is broken — symptom → cause → fix, from real failures |
+| [docs/qpkg-spec.md](docs/qpkg-spec.md) | the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
+| [docs/qpkg-service-packaging.md](docs/qpkg-service-packaging.md) | the method: audit, dependency classification, building against glibc 2.21 |
+| [docs/static-linking.md](docs/static-linking.md) | verifying a payload's linkage, measured rather than assumed |
+| [docs/nas-topology.md](docs/nas-topology.md) | deployment state for one particular NAS |
 
 ## Layout
 
 ```
 AGENTS.md     start here: ground rules, doc map, commands, verification standard
-docs/         format notes, troubleshooting, and this package's decisions
-packages/     One directory per QPKG: qpkg.cfg, package_routines, shared/, icons/
+docs/         format notes, methodology, troubleshooting, deployment state
+packages/     one directory per QPKG: qpkg.cfg, package_routines, shared/, icons/
 scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
 ```
 
-## Environment
+## Conventions that matter
 
-- Build host: Fedora, `qbuild` from [qnap-dev/QDK](https://github.com/qnap-dev/QDK)
-- Package install path on NAS: `/share/<VOL>/.qpkg/<QPKG_NAME>`
-- QTS is glibc-based; init is QTS's own (`qpkg.conf` RC ordering), **not** systemd
+- **Payloads are never committed.** They are fetched by a script that verifies
+  upstream checksums, and they are gitignored.
+- **`data/` is created at install, never shipped.** QTS only tracks shipped files
+  for obsolete-file cleanup, so a directory it never saw is never touched by an
+  upgrade — and it is removed on uninstall. Nothing irreplaceable may live there.
+- **User configuration and credentials live next to the service script**, protected
+  by `QPKG_CONFIG`, so an upgrade cannot silently clobber them.
+- **QPKG builds are not reproducible.** Two builds of identical inputs differ by a
+  couple of bytes and hash differently. Verify by hashing the extracted members,
+  and never present a `.qpkg` hash as reproducible from source.
+- **QTS has no `systemd`.** Daemonising means probing absolute paths for `setsid`,
+  then `/bin/busybox setsid`, then `sh -c` with `trap '' HUP`. Never rely on
+  `command -v` alone.
 
-## Status
+## Build environment
 
-**Installed and running** on the NAS as the cold backup registry:
-
-```
-http://192.168.1.40:5050        zot 2.1.22, QTS 5.2.9, QPKG
-packages/zot/build/Zot_2.1.22_x86_64.qpkg   65.4 MB   (unsigned)
-```
-
-Verified end to end: `skopeo copy` push → catalog/tags/manifest digest identical to
-source → pull back → inspect. Service script exercised against a fake root for
-start, readiness, rotate and stop, plus on the real NAS.
-
-**Installed and running** — a file-list / storage gateway, same native-binary
-approach:
-
-```
-http://192.168.1.40:5244        OpenList 4.2.9, QTS 5.2.9, QPKG
-packages/openlist/build/OpenList_4.2.9_x86_64.qpkg   53.5 MB   (unsigned)
-```
-
-Static musl binary, embedded frontend, sqlite storage under the chosen volume.
-Details: [docs/openlist.md](docs/openlist.md).
-
-**Installed and running** — a restic backup orchestrator with an embedded web UI:
-
-```
-http://192.168.1.40:9898        Backrest 1.14.1, QTS 5.2.9, QPKG
-packages/backrest/build/Backrest_1.14.1_x86_64.qpkg   21.9 MB   (unsigned)
-```
-
-Two static Go binaries (backrest + the restic it drives), embedded UI, pure-Go
-sqlite. Details: [docs/backrest.md](docs/backrest.md).
-
-All three were confirmed serving from the LAN on 2026-11-06, and
-`/etc/init.d/<name>.sh restart` is the confirmed way to restart one — see
-[docs/troubleshooting.md](docs/troubleshooting.md).
-
-Build with:
-
-```sh
-scripts/fetch-zot.sh      # payload, sha256-verified against upstream checksums
-scripts/make-icons.sh /path/to/logo512.png packages/zot/icons   # optional, icons are committed
-scripts/build-qpkg.sh
-
-scripts/fetch-openlist.sh     # payload, md5-verified against upstream + our sha256 pin
-scripts/build-qpkg.sh openlist
-```
-
-## Working on this repo
-
-Start with **[AGENTS.md](AGENTS.md)** — doc map, ground rules, commands, and the
-verification standard all live there. The one thing worth knowing immediately: *"done"
-means `scripts/test-package.sh` passes, not that `qbuild` printed success.*
-
-Quick map:
-
-| | |
-|---|---|
-| [docs/troubleshooting.md](docs/troubleshooting.md) | start here when something is broken |
-| [docs/qpkg-spec.md](docs/qpkg-spec.md) | the QPKG format and build host behaviour |
-| [docs/zot-*.md](docs/) | the zot package's config, storage, linkage decisions |
-| [docs/openlist.md](docs/openlist.md) | the OpenList package: env vars, config, first start |
-| [packages/zot/README.md](packages/zot/README.md) | what's inside the zot package |
-| [packages/openlist/README.md](packages/openlist/README.md) | what's inside the OpenList package |
-
-## Decisions
-
-| Item | Value |
-|---|---|
-| Target arch | `x86_64` |
-| Listen port | `5050` (zot) — 5000 is taken by the QTS portal; `5244` (OpenList) |
-| NAS loader | glibc 2.21 (`ld-linux-x86-64.so.2 -> ld-2.21.so`) — QTS pins it deliberately |
-| QTS version | 5.2.9 (so `QTS_MINI_VERSION="5.0.0"` is correct) |
-| zot payload | Upstream `zot-linux-amd64` v2.1.22 prebuilt — verified against glibc 2.21 |
-| OpenList payload | Upstream `openlist-linux-musl-amd64` v4.2.9 — statically linked, libc-independent |
-| Storage | `${QPKG_ROOT}/data` — see [docs/zot-storage.md](docs/zot-storage.md) |
-| Install volume | Admin picks at install → `QPKG_VOLUME_SELECT="3"` |
-| Extensions | `storage`, `search`, `ui`, `metrics` — **no `sync`, no `cve`** ([zot-config.md](docs/zot-config.md)) |
-| Image sync | Done externally; the NAS never reaches upstream. Deliberate, not unfinished |
-| Logging | `level: warn`; size cap via QTS cron (10 MB, keep 3), not start-based rotation |
-| Populated by | LAN `skopeo copy` from the fedora zot, no upstream access |
-
+- Build host: Fedora, with `qbuild` from
+  [qnap-dev/QDK](https://github.com/qnap-dev/QDK) unpacked at `.tools/QDK`
+  (gitignored).
+- The build compiles `qpkg_encrypt` from the QDK tree on first run; without it the
+  package ships with no checksum trailer and QTS rejects the install.
+- The build host cannot reach `docker.io`, `proxy.golang.org` or `go.dev`; use
+  `quay.io`, `goproxy.cn` and the aliyun mirror family. Check reachability before
+  designing a build around an endpoint.
+- Package install path on the NAS: `/share/<VOL>/.qpkg/<QPKG_NAME>`.

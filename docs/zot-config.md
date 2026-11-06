@@ -43,11 +43,12 @@ apps would mean enabling `extensions.sync` with `onDemand: true`, which:
 - couples Container Station app pulls to a daemon that must also serve as the
   cluster's DR copy — two roles with different failure tolerances.
 
-Container Station apps should pull from the primary at `192.168.1.3:5000` over the
-LAN instead. That keeps the NAS package simple and leaves the cold copy genuinely
-cold.
+Container Station apps should pull from the **primary** registry over the LAN
+instead of through the NAS package. That keeps the NAS package simple and leaves
+the cold copy genuinely cold. The addresses for this deployment are in
+[nas-topology.md](nas-topology.md).
 
-Add the `sync` block only if the fedora host stops being reachable and the NAS must
+Add the `sync` block only if the primary stops being reachable and the NAS must
 serve Container Station on its own — and treat that as a design change, not a tweak.
 
 

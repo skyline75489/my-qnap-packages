@@ -5,31 +5,36 @@ is the map. Details live in `docs/`.
 
 ## What this repo is
 
-Builds QPKG packages for a QNAP NAS (QTS 5.2.9). Three packages today:
+A **method** for packaging third-party services as QPKG packages for a QNAP NAS,
+plus three worked examples of it.
 
-- **zot**, an OCI registry deployed as the K3s cluster's **cold backup** at
-  `192.168.1.40:5050`. The primary registry is the fedora host at
-  `192.168.1.3:5000`.
-- **OpenList**, a file-list / storage gateway at `192.168.1.40:5244`. Installed
-  and enabled on the NAS.
-- **Backrest**, a restic backup orchestrator with a web UI at
-  `192.168.1.40:9898`. Installed and enabled on the NAS.
+The packages share two constraints, and those constraints are the reason the repo
+exists:
 
-The point of the packages is that they need no Container Station and no runtime
-downloads: a registry that boots from an image registry is circular, so it ships as a
-static binary that QTS starts directly.
+- **No container runtime dependency.** A container-based package needs a working
+  registry to pull its own image — circular when the package *is* the registry. It
+  also couples uptime to Container Station and to images surviving an App Center
+  reinstall.
+- **No runtime downloads.** The NAS may be isolated, and an unattended download is an
+  unreviewed binary. If an app insists on fetching something at first start, that
+  something gets **bundled** instead.
 
-**Not every service belongs here.** Before starting a new package, work through
-`docs/qpkg-service-packaging.md`: deciding QPKG vs container, auditing an upstream
-project's native libraries and external tools, and building something that runs on the
-NAS's glibc 2.21. A service that needs a database server or a multi-process runtime
-belongs in Container Station — say so rather than building it.
+**Not every service belongs in a QPKG.** Before starting a new package, work
+through `docs/qpkg-service-packaging.md`: deciding QPKG vs container, auditing an
+upstream project's native libraries and external tools, and building something that
+runs on the NAS's glibc 2.21. A service that needs a database server or a
+multi-process runtime belongs in Container Station — say so rather than building it.
+
+The worked examples, each a different shape of problem: **zot** (prebuilt static
+binary, JSON config), **OpenList** (static musl binary, self-generated config),
+**Backrest** (two static binaries, a helper that would otherwise be downloaded).
+Per-package decisions live in each package's README and in `docs/<name>.md`.
 
 ## Ground rules
 
-1. **Build freely, install only on instruction.** `scripts/build-qpkg.sh` and
-   `scripts/test-package.sh` are local and safe. Installing on the NAS, restarting
-   services there, or touching the K3s nodes is the user's call.
+1. **Build freely, install only on instruction.** The `scripts/fetch-*` and
+   `scripts/build-*` scripts are local and safe. Installing on the NAS, restarting
+   services there, or touching anything else in the deployment is the user's call.
 2. **Never re-add `sync` or a `cve` block to the zot config.** Both are recorded
    decisions with reasons, not oversights — see `docs/zot-config.md`. `sync` off keeps
    the bootstrap layer free of upstream TLS and proxy concerns; the `cve` block forces
@@ -43,6 +48,10 @@ belongs in Container Station — say so rather than building it.
    That is intentional for these packages (caches and rebuildable state), but never
    put anything there that cannot be rebuilt. User configuration and credentials
    belong next to the service script, protected by `QPKG_CONFIG`.
+6. **Keep the method general and the deployment separate.** `docs/` and this file
+   describe *how to package a service*; addresses, ports and what happens to be
+   installed belong in `docs/nas-topology.md`. A fact that only holds for one
+   deployment does not belong in the ground rules.
 
 ## Verification standard
 
@@ -66,28 +75,31 @@ start → readiness → the app's own HTTP surface → status → rotate → sto
 twice, the second time with a `PATH` containing no `setsid`, which is the regression
 test for the bug that cost three round trips on the real NAS.
 
+A new package needs the same three scripts under the same names, and its harness
+must assert what is *specific* to it — for Backrest, that the bundled helper was
+used and that nothing was downloaded.
+
 Anything not covered there must be stated as unverified, not implied.
 
 **Do not let the test scripts inherit `PORT` from the environment.** A dev host
 often has `PORT` set to something else; the tests would then talk to a foreign
-service and report nonsense failures. Both test scripts use `TEST_PORT`.
+service and report nonsense failures. Every test script uses `TEST_PORT`.
 
 ## Doc map
 
 | Read | When |
 |---|---|
+| **docs/qpkg-service-packaging.md** | Starting a new package: does it belong in a QPKG, what does it depend on, how to build it against glibc 2.21 |
 | **docs/troubleshooting.md** | Something is broken. Symptom → cause → fix, from real failures |
 | **docs/qpkg-spec.md** | Working on the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
-| **docs/qpkg-service-packaging.md** | Wrapping a new third-party service: QPKG vs container, dependency audit, building against glibc 2.21 |
+| **docs/static-linking.md** | Verifying a payload's linkage — measured, not assumed |
+| **docs/nas-topology.md** | Deployment state for one particular NAS: addresses, ports, what is installed |
 | **docs/zot-config.md** | Touching extensions, logging, or rotation |
 | **docs/zot-storage.md** | Storage paths, install volume vs storage volume, uninstall semantics |
-| **docs/static-linking.md** | Why the upstream binary runs on glibc 2.21 unmodified (measured, not assumed) |
 | **docs/zot-binary-notes.md** | Release assets, the `-minimal` build, linkage, payload size |
 | **docs/openlist.md** | The OpenList package: env vars, config paths, first start, licensing |
 | **docs/backrest.md** | The Backrest package: why restic is bundled, ports, paths, authentication |
-| **packages/zot/README.md** | What's inside the zot package and how the service script behaves |
-| **packages/openlist/README.md** | What's inside the OpenList package and how the service script behaves |
-| **packages/backrest/README.md** | What's inside the Backrest package and how the service script behaves |
+| **packages/*/README.md** | What's inside each package and how its service script behaves |
 
 ## Commands
 
@@ -108,70 +120,50 @@ The build needs QDK unpacked at `.tools/QDK` (gitignored) and, on a non-NAS host
 also sets `QDK_SCRIPTS_DIR`/`QDK_TEMPLATE_DIR` because the QDK *repo* keeps them under
 `shared/` while an installed QDK does not.
 
-## Environment facts (verified, not assumed)
+## QTS facts that shape every package
 
-- **NAS is x86_64**, QTS 5.2.9, glibc **2.21** — QTS pins it deliberately, so build
-  targets must not assume a newer libc. The upstream zot binary is static-PIE and
-  needs only `/lib64/ld-linux-x86-64.so.2`.
-- **Port 5000 is the QTS portal.** The packages use **5050** (zot), **5244**
-  (OpenList) and **9898** (Backrest).
+These are properties of the target, not of any one service. They are the ones that
+have actually bitten.
+
+- **The target is x86_64**, QTS 5.2.9, glibc **2.21** — QTS pins it deliberately, so
+  build targets must not assume a newer libc. Verify a payload's requirement with
+  `objdump -T <binary> | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -3`; every symbol
+  must be ≤ 2.21.
+- **Port 5000 is the QTS portal.** Packages here use 5050, 5244 and 9898.
 - **QTS has no `systemd`, no `nohup`, and often no `setsid` on `PATH`.** Daemonising
   means probing absolute paths for `setsid`, then `/bin/busybox setsid`, then
   `sh -c` with `trap '' HUP`. Never rely on `command -v` alone.
+- **A failed start leaves the app silently disabled.** If a port refuses connections,
+  check `getcfg <Name> Enable` before anything else.
+- **A fresh install is disabled by design**, and QTS still runs the init script at
+  boot when disabled — which is why every service script checks `Enable` first.
+- **Install hooks are functions; removal hooks are variables.** A `PKG_POST_INSTALL`
+  *variable* is accepted and silently ignored. This is the single easiest thing to
+  get wrong.
+- **QTS generates `/etc/init.d/<name>.sh`** at install time; `restart` there calls the
+  package's own script with stop then start.
+- Arch support is `x86_64`, `x86`, `arm_64`, `arm-x41` only.
+
+## Build-host facts
+
 - **The build host cannot reach `docker.io`, `proxy.golang.org`, or `go.dev`.** Use
   `quay.io` for base images, `goproxy.cn` for Go modules, and the aliyun mirror family
   for CentOS/EPEL archives and the Go tarball. `github.com` and `nodejs.org` work.
   Check reachability before designing a build around an endpoint.
-- **A failed start leaves the app silently disabled.** If a port refuses connections,
-  check `getcfg Zot Enable` before anything else.
-- Arch support is `x86_64`, `x86`, `arm_64`, `arm-x41` only.
-- **All three packages are installed and enabled on the NAS** (verified 2026-11-06:
-  App Center reports them installed and enabled, and each answers on its port).
-  `/etc/init.d/<name>.sh restart` is the confirmed way to restart one.
 
 ## Package layout
 
 ```
-packages/zot/
+packages/<name>/
   qpkg.cfg            metadata (name <=20 chars, version <=10)
   package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
-  shared/             config.json, zot.sh -> installed at $QPKG_ROOT
-  icons/              Zot.gif 64x64, Zot_gray.gif 64x64, Zot_80.gif 80x80
+  shared/             config, service script -> installed at $QPKG_ROOT
+  icons/              <Name>.gif 64x64, <Name>_gray.gif 64x64, <Name>_80.gif 80x80
   x86_64/             payload (gitignored)
-
-packages/openlist/
-  qpkg.cfg            metadata (name <=20 chars, version <=10)
-  package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
-  shared/             openlist.sh -> installed at $QPKG_ROOT
-  icons/              OpenList.gif 64x64, OpenList_gray.gif 64x64, OpenList_80.gif 80x80
-  x86_64/             payload (gitignored)
-
-packages/backrest/
-  qpkg.cfg            metadata (name <=20 chars, version <=10)
-  package_routines    install hooks as FUNCTIONS; removal hooks as VARIABLES
-  shared/             config.json, backrest.sh -> installed at $QPKG_ROOT
-  icons/              Backrest.gif 64x64, Backrest_gray.gif 64x64, Backrest_80.gif 80x80
-  x86_64/             payloads: backrest AND restic (gitignored)
 ```
 
 `data/` is created imperatively in `pkg_install()`, never shipped, so upgrades leave it
-alone. Install hooks being functions while removal hooks are variables is the single
-easiest thing to get wrong — a `PKG_POST_INSTALL` variable is accepted and ignored.
-
-## Registry topology
-
-Do not confuse these; getting it wrong has already cost time.
-
-| Address | Role |
-|---|---|
-| `192.168.1.3:5000` | **primary** zot, fedora host, pull-through enabled |
-| `192.168.1.40:5050` | **cold backup** zot, this QPKG. No sync, no auth, promoted manually |
-| `192.168.1.2` | **not a registry** — a k3s node (`skyline-alpine`) |
-| `192.168.1.206:5000` | dead; in-cluster zot removed 2026-07-06 |
-
-The cold backup is deliberately absent from `registries.yaml` so containerd never
-waits on a powered-down host. Population is by LAN `skopeo copy --all`; always use
-`--all` so the multi-arch index and therefore the digest match the source.
+alone.
 
 ## QPKG builds are not reproducible
 

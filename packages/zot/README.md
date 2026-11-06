@@ -34,8 +34,9 @@ scripts/fetch-zot.sh     # verifies sha256 against the release checksums file
 scripts/build-qpkg.sh    # -> packages/zot/build/Zot_2.1.22_x86_64.qpkg
 ```
 
-Both need network. `github.com` is unreliable from here — if the fetch stalls, set
-`HTTPS_PROXY=socks5h://192.168.1.204:1080`. `scripts/build-qpkg.sh` compiles
+Both need network. `github.com` is unreliable from this build host — if the fetch
+stalls, set `HTTPS_PROXY` (the proxy for this deployment is in
+[docs/nas-topology.md](../../docs/nas-topology.md)). `scripts/build-qpkg.sh` compiles
 `qpkg_encrypt` from the QDK tree on first run; without it the package ships with no
 checksum trailer (see `docs/qpkg-spec.md`).
 
