@@ -100,6 +100,20 @@ disk-space one. Check `df -h /tmp` before believing the repository.
 --temp-dir`), so the environment is the only knob — and it works, because Backrest
 passes its own environment to the restic subprocess (`restic.WithEnviron()`).
 
+**Spell it `TMPDIR`** — no underscore. `TMP_DIR` is not read, and neither is
+`TEMP` (that one is Windows-only, where the variable is `TMP`). Measured on the
+build host, with the variable pointing at an unwritable directory:
+
+```
+TMPDIR=/tmp/rt3/ro restic backup ...   ->  Fatal: unable to save snapshot:
+                                          open /tmp/rt3/ro/restic-temp-pack-587900264: permission denied
+TMP_DIR=/tmp/rt3/ro restic backup ...  ->  processed 1 files, 19.073 MiB in 0:00
+                                          snapshot 4a8f244f saved
+```
+
+A misspelt variable is worse than none: it looks like it is doing something, and
+the package-level setting silently covers for it.
+
 This package therefore sets, in the service script:
 
 | Variable | Value | Why |

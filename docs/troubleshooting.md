@@ -91,6 +91,11 @@ environment is inherited by the restic subprocess. The Backrest package sets
 `TMPDIR=$QPKG_ROOT/data/tmp` for exactly this reason; per repository, the
 Backrest UI's *Environment variables* field sets it for one repo only.
 
+**The variable is `TMPDIR`** — no underscore. `TMP_DIR` is not read (verified:
+pointing it at an unwritable directory changes nothing), and `TEMP` is Windows-only
+(there the variable is `TMP`). A misspelt one is worse than none: it looks like
+it is working while the package-level setting quietly covers for it.
+
 **If `TMPDIR` appears to be ignored**, check what the process actually sees —
 upstream had the same report ([restic/restic#4872](https://github.com/restic/restic/issues/4872)),
 and the cause was a wrapper script resetting it:
