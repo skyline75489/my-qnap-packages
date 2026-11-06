@@ -17,6 +17,12 @@ The point of the packages is that they need no Container Station and no runtime
 downloads: a registry that boots from an image registry is circular, so it ships as a
 static binary that QTS starts directly.
 
+**Not every service belongs here.** Before starting a new package, work through
+`docs/qpkg-service-packaging.md`: deciding QPKG vs container, auditing an upstream
+project's native libraries and external tools, and building something that runs on the
+NAS's glibc 2.21. A service that needs a database server or a multi-process runtime
+belongs in Container Station — say so rather than building it.
+
 ## Ground rules
 
 1. **Build freely, install only on instruction.** `scripts/build-qpkg.sh` and
@@ -66,6 +72,7 @@ service and report nonsense failures. Both test scripts use `TEST_PORT`.
 |---|---|
 | **docs/troubleshooting.md** | Something is broken. Symptom → cause → fix, from real failures |
 | **docs/qpkg-spec.md** | Working on the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
+| **docs/qpkg-service-packaging.md** | Wrapping a new third-party service: QPKG vs container, dependency audit, building against glibc 2.21 |
 | **docs/zot-config.md** | Touching extensions, logging, or rotation |
 | **docs/zot-storage.md** | Storage paths, install volume vs storage volume, uninstall semantics |
 | **docs/static-linking.md** | Why the upstream binary runs on glibc 2.21 unmodified (measured, not assumed) |
@@ -100,6 +107,10 @@ also sets `QDK_SCRIPTS_DIR`/`QDK_TEMPLATE_DIR` because the QDK *repo* keeps them
 - **QTS has no `systemd`, no `nohup`, and often no `setsid` on `PATH`.** Daemonising
   means probing absolute paths for `setsid`, then `/bin/busybox setsid`, then
   `sh -c` with `trap '' HUP`. Never rely on `command -v` alone.
+- **The build host cannot reach `docker.io`, `proxy.golang.org`, or `go.dev`.** Use
+  `quay.io` for base images, `goproxy.cn` for Go modules, and the aliyun mirror family
+  for CentOS/EPEL archives and the Go tarball. `github.com` and `nodejs.org` work.
+  Check reachability before designing a build around an endpoint.
 - **A failed start leaves the app silently disabled.** If a port refuses connections,
   check `getcfg Zot Enable` before anything else.
 - Arch support is `x86_64`, `x86`, `arm_64`, `arm-x41` only.
