@@ -10,10 +10,10 @@ Builds QPKG packages for a QNAP NAS (QTS 5.2.9). Three packages today:
 - **zot**, an OCI registry deployed as the K3s cluster's **cold backup** at
   `192.168.1.40:5050`. The primary registry is the fedora host at
   `192.168.1.3:5000`.
-- **OpenList**, a file-list / storage gateway at `192.168.1.40:5244`. Built, not
-  yet installed on the NAS.
+- **OpenList**, a file-list / storage gateway at `192.168.1.40:5244`. Installed
+  and enabled on the NAS.
 - **Backrest**, a restic backup orchestrator with a web UI at
-  `192.168.1.40:9898`. Built, not yet installed on the NAS.
+  `192.168.1.40:9898`. Installed and enabled on the NAS.
 
 The point of the packages is that they need no Container Station and no runtime
 downloads: a registry that boots from an image registry is circular, so it ships as a
@@ -125,6 +125,9 @@ also sets `QDK_SCRIPTS_DIR`/`QDK_TEMPLATE_DIR` because the QDK *repo* keeps them
 - **A failed start leaves the app silently disabled.** If a port refuses connections,
   check `getcfg Zot Enable` before anything else.
 - Arch support is `x86_64`, `x86`, `arm_64`, `arm-x41` only.
+- **All three packages are installed and enabled on the NAS** (verified 2026-11-06:
+  App Center reports them installed and enabled, and each answers on its port).
+  `/etc/init.d/<name>.sh restart` is the confirmed way to restart one.
 
 ## Package layout
 

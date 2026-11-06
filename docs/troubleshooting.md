@@ -27,6 +27,41 @@ Most "it's broken" reports resolve in the first two.
 
 ## Install and start
 
+### Restarting a package
+
+**Symptom:** you changed a config file, or the app is wedged, and you want it back
+without rebooting the NAS.
+
+**Fix:** use the init script QTS generates at install time. Confirmed working on
+QTS 5.2.9 with all three packages installed:
+
+```sh
+/etc/init.d/zot.sh restart
+/etc/init.d/openlist.sh restart
+/etc/init.d/backrest.sh restart
+```
+
+It checks `Enable` and then calls the package's own service script with `stop`
+followed by `start` — which is exactly what the scripts implement, so
+`restart` is a clean stop and start, not a kill.
+
+Calling the package script directly works too, and is what the init script ends up
+doing:
+
+```sh
+sh "$(/sbin/getcfg Backrest Install_Path -f /etc/config/qpkg.conf)/backrest.sh" restart
+```
+
+**Two things to expect:**
+
+- A **disabled** package refuses to start (`<Name> is disabled.`) and exits 1.
+  That is the `Enable` check, not a crash — enable it in App Center first.
+- Backrest's stop sends **SIGINT**, not SIGTERM: Backrest traps `os.Interrupt` and
+  closes its sqlite connections in order, and does not trap SIGTERM at all. Its
+  restart therefore takes a second or two.
+
+App Center has no dedicated restart button; stop and start are two clicks.
+
 ### Installed fine, port refuses connections
 
 **Cause:** the start script exited non-zero, and **QTS records a failed start as

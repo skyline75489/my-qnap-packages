@@ -102,9 +102,10 @@ file not found` — and python3 is already a dependency of the test harness.
 
 ## What is not covered
 
-- The package has not been installed on a real NAS. `scripts/test-backrest.sh` is a
-  faithful stand-in, not a substitute.
 - The UI's own flows (creating a repo, running a backup, restoring) are not
   exercised by the harness — only the HTTP surface, the service lifecycle, and the
   restic wiring.
 - Video/large-file behaviour, S3 and SFTP backends are untested.
+- The package **is** installed and enabled on the NAS (2026-11-06): `/` answers 200
+  and `POST /v1.Backrest/GetConfig` returns the config with the generated identity,
+  which shows the shipped `config.json` was read and rewritten on the NAS.

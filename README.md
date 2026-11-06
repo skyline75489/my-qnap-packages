@@ -46,16 +46,30 @@ Verified end to end: `skopeo copy` push → catalog/tags/manifest digest identic
 source → pull back → inspect. Service script exercised against a fake root for
 start, readiness, rotate and stop, plus on the real NAS.
 
-**Built, not yet installed** — a file-list / storage gateway, same native-binary
+**Installed and running** — a file-list / storage gateway, same native-binary
 approach:
 
 ```
-http://192.168.1.40:5244        OpenList 4.2.9, QTS 5.2.9, QPKG (not installed)
+http://192.168.1.40:5244        OpenList 4.2.9, QTS 5.2.9, QPKG
 packages/openlist/build/OpenList_4.2.9_x86_64.qpkg   53.5 MB   (unsigned)
 ```
 
 Static musl binary, embedded frontend, sqlite storage under the chosen volume.
 Details: [docs/openlist.md](docs/openlist.md).
+
+**Installed and running** — a restic backup orchestrator with an embedded web UI:
+
+```
+http://192.168.1.40:9898        Backrest 1.14.1, QTS 5.2.9, QPKG
+packages/backrest/build/Backrest_1.14.1_x86_64.qpkg   21.9 MB   (unsigned)
+```
+
+Two static Go binaries (backrest + the restic it drives), embedded UI, pure-Go
+sqlite. Details: [docs/backrest.md](docs/backrest.md).
+
+All three were confirmed serving from the LAN on 2026-11-06, and
+`/etc/init.d/<name>.sh restart` is the confirmed way to restart one — see
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 Build with:
 

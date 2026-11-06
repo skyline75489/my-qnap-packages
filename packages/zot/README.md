@@ -68,4 +68,5 @@ and removes the pid file.
 
 - Unsigned. QTS requires App Center → "Allow installation of applications without a
   valid digital signature", or a GPG/QNAP signing step.
-- Not installed on the NAS. No `.qpkg` has been run against real QTS.
+- Installed and enabled on the NAS (2026-11-06): `/v2/` and `/v2/_catalog` answer
+  200 from the LAN.

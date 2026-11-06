@@ -83,6 +83,8 @@ OpenList v4 does **not** create an admin account on its own. Two ways:
 
 - Unsigned. QTS requires App Center → "Allow installation of applications without a
   valid digital signature", or a GPG/QNAP signing step.
-- Not installed on the NAS. The package has never been run against real QTS.
+- **Installed and enabled** on the NAS (2026-11-06). Verified from the LAN: `/` and
+  `/api/public/settings` answer 200, and the package's own `config.json` and
+  `data/` tree are in place.
 - Only `x86_64`. The upstream musl builds also exist for arm64/386/arm, but the
   QNAP `arm-x41` mapping has not been worked out.

@@ -88,10 +88,17 @@ containing no `setsid`.
 
 - Unsigned. QTS requires App Center → "Allow installation of applications without a
   valid digital signature", or a GPG/QNAP signing step.
-- Not installed on the NAS. No `.qpkg` has been run against real QTS.
-- Authentication is **disabled** by default (upstream's default). The service script
-  logs a warning on every start; create a user in the Backrest UI before exposing
-  the port to anything untrusted.
+- **Installed and enabled** on the NAS (2026-11-06). Verified from the LAN: `/`
+  answers 200 and `POST /v1.Backrest/GetConfig` returns the config with
+  `"instance":"backrest"` and a generated identity key — i.e. the shipped
+  `config.json` was read and rewritten by the app on the NAS, which is the
+  `QPKG_CONFIG` path doing its job.
+- The UI's own flows (creating a repo, running a backup, restoring) are **not**
+  exercised — only the HTTP surface, the service lifecycle and the restic wiring.
 - The bundled restic is pinned to the version backrest requires
   (`RequiredResticVersion` upstream). A backrest upgrade that bumps that version
   needs `RESTIC_VERSION` updated in `scripts/fetch-backrest.sh`.
+- Authentication is **disabled** by default (upstream's default). The service script
+  logs a warning on every start; create a user in the Backrest UI before exposing
+  the port to anything untrusted. The warning is visible in the NAS log on every
+  start, and `GET /v1.Backrest/GetConfig` reports `"auth":{"disabled":true}`.
