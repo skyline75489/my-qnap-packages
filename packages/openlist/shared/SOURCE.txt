@@ -1,0 +1,15 @@
+# Upstream source for the OpenList package.
+#
+# This package redistributes a binary built by the upstream project below. That
+# upstream source is the "corresponding source" for the binary inside this
+# package, and the upstream licence text ships alongside it as LICENSE.
+#
+# Read by scripts/release.sh when it writes the release notes, so the published
+# release always states the exact upstream version it was built from.
+
+name:       OpenList
+version:    4.2.9
+url:        https://github.com/OpenListTeam/OpenList
+tag_url:    https://github.com/OpenListTeam/OpenList/releases/tag/v4.2.9
+licence:    AGPL-3.0
+payload:    openlist-linux-musl-amd64 (upstream release binary, static musl)

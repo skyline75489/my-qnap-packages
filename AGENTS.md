@@ -52,6 +52,11 @@ Per-package decisions live in each package's README and in `docs/<name>.md`.
    describe *how to package a service*; addresses, ports and what happens to be
    installed belong in `docs/nas-topology.md`. A fact that only holds for one
    deployment does not belong in the ground rules.
+7. **Publish only what the harness verified.** `scripts/release.sh` runs the
+   harness and refuses to publish on failure. It also refuses a package that does
+   not ship its upstream `LICENSE` and `SOURCE.txt`, and it publishes a digest of
+   the artifact rather than a claim of reproducibility — QPKG builds are not
+   reproducible. See `docs/publishing.md`.
 
 ## Verification standard
 
@@ -93,6 +98,7 @@ service and report nonsense failures. Every test script uses `TEST_PORT`.
 | **docs/troubleshooting.md** | Something is broken. Symptom → cause → fix, from real failures |
 | **docs/qpkg-spec.md** | Working on the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
 | **docs/static-linking.md** | Verifying a payload's linkage — measured, not assumed |
+| **docs/publishing.md** | Publishing a package as a GitHub release: the gates, the digest, the licence obligations |
 | **docs/nas-topology.md** | Deployment state for one particular NAS: addresses, ports, what is installed |
 | **docs/zot-config.md** | Touching extensions, logging, or rotation |
 | **docs/zot-storage.md** | Storage paths, install volume vs storage volume, uninstall semantics |
@@ -113,6 +119,7 @@ scripts/test-package.sh [pkg.qpkg]       # verify the zot package without a NAS
 scripts/test-openlist.sh [pkg.qpkg]      # verify the OpenList package without a NAS
 scripts/test-backrest.sh [pkg.qpkg]      # verify the Backrest package without a NAS
 scripts/debug-zot-qpkg.sh                # READ-ONLY, runs ON the NAS as root
+scripts/release.sh <package>             # publish a built .qpkg as a GitHub release
 ```
 
 The build needs QDK unpacked at `.tools/QDK` (gitignored) and, on a non-NAS host,

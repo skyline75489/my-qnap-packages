@@ -80,6 +80,7 @@ Each is a different shape of problem, which is why all three are here.
 | [docs/qpkg-spec.md](docs/qpkg-spec.md) | the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
 | [docs/qpkg-service-packaging.md](docs/qpkg-service-packaging.md) | the method: audit, dependency classification, building against glibc 2.21 |
 | [docs/static-linking.md](docs/static-linking.md) | verifying a payload's linkage, measured rather than assumed |
+| [docs/publishing.md](docs/publishing.md) | publishing a package as a GitHub release: the gates, the digest, the licence obligations |
 | [docs/nas-topology.md](docs/nas-topology.md) | deployment state for one particular NAS |
 
 ## Layout
@@ -95,6 +96,12 @@ scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
 
 - **Payloads are never committed.** They are fetched by a script that verifies
   upstream checksums, and they are gitignored.
+- **Every package ships its upstream `LICENSE` and a `SOURCE.txt`** naming the
+  exact upstream version it was built from. Two of the three packages are copyleft,
+  and a public release is redistribution.
+- **A release is published only after the harness passes**, and it carries a digest
+  of the artifact rather than a claim of reproducibility — QPKG builds are not
+  reproducible.
 - **`data/` is created at install, never shipped.** QTS only tracks shipped files
   for obsolete-file cleanup, so a directory it never saw is never touched by an
   upgrade — and it is removed on uninstall. Nothing irreplaceable may live there.

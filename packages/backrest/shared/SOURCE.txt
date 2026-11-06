@@ -1,0 +1,22 @@
+# Upstream source for the Backrest package.
+#
+# This package redistributes binaries built by the upstream projects below.
+# Those upstream sources are the "corresponding source" for the binaries inside
+# this package, and the upstream licence text ships alongside them as LICENSE.
+#
+# Two upstreams: the application itself, and the restic binary it drives. The
+# restic version is pinned to the one Backrest requires (RequiredResticVersion
+# upstream) — see docs/backrest.md.
+#
+# Read by scripts/release.sh when it writes the release notes, so the published
+# release always states the exact upstream versions it was built from.
+
+name:       Backrest
+version:    1.14.1
+url:        https://github.com/garethgeorge/backrest
+tag_url:    https://github.com/garethgeorge/backrest/releases/tag/v1.14.1
+licence:    GPL-3.0
+payload:    backrest_Linux_x86_64 (upstream release binary, static)
+helper:     restic 0.19.1 (https://github.com/restic/restic, static)
+helper_url: https://github.com/restic/restic/releases/tag/v0.19.1
+helper_licence: BSD-3-Clause

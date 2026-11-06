@@ -1,0 +1,15 @@
+# Upstream source for the zot package.
+#
+# This package redistributes a binary built by the upstream project below. That
+# upstream source is the "corresponding source" for the binary inside this
+# package, and the upstream licence text ships alongside it as LICENSE.
+#
+# Read by scripts/release.sh when it writes the release notes, so the published
+# release always states the exact upstream version it was built from.
+
+name:       zot
+version:    2.1.22
+url:        https://github.com/project-zot/zot
+tag_url:    https://github.com/project-zot/zot/releases/tag/v2.1.22
+licence:    Apache-2.0
+payload:    zot-linux-amd64 (upstream release binary, static-PIE)
