@@ -57,6 +57,10 @@ Per-package decisions live in each package's README and in `docs/<name>.md`.
    not ship its upstream `LICENSE` and `SOURCE.txt`, and it publishes a digest of
    the artifact rather than a claim of reproducibility — QPKG builds are not
    reproducible. See `docs/publishing.md`.
+8. **The repo's own work is MIT; the payloads are not.** The scripts, scaffolding
+   and docs are MIT (`LICENSE` at the root). Each package redistributes an
+   upstream binary under *that* project's licence, and must ship the upstream
+   `LICENSE` text plus a `SOURCE.txt` naming the exact upstream version.
 
 ## Verification standard
 

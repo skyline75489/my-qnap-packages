@@ -125,3 +125,21 @@ scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
   `quay.io`, `goproxy.cn` and the aliyun mirror family. Check reachability before
   designing a build around an endpoint.
 - Package install path on the NAS: `/share/<VOL>/.qpkg/<QPKG_NAME>`.
+
+## Licence
+
+The packaging in this repo — the scripts, the package scaffolding, the docs — is
+[MIT](LICENSE).
+
+The **payloads are not**. Each package redistributes an upstream binary under that
+project's own licence, which ships inside the package as `LICENSE`, with
+`SOURCE.txt` naming the exact upstream version it was built from:
+
+| Package | Upstream licence |
+|---|---|
+| zot | Apache-2.0 |
+| OpenList | AGPL-3.0 |
+| Backrest | GPL-3.0, plus the bundled restic (BSD-3-Clause) |
+
+The MIT licence covers this repo's own work, not the third-party binaries it
+redistributes.
