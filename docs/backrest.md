@@ -127,6 +127,45 @@ TMPDIR=/share/CACHEDEV1_DATA/.restic-tmp
 
 Per-repo `flags` cannot solve this: restic has no `--temp-dir`.
 
+### What upstream says
+
+The `--temp-dir` idea is a real upstream request, and the answer is instructive.
+
+| Issue | State | Outcome |
+|---|---|---|
+| [restic/restic#5572](https://github.com/restic/restic/issues/5572) — *specifying temp directory* | closed 2025-11-17 | The reporter asked for exactly this: "add Global Flags command line option `--temp-dir` … similar to `--cache-dir`. It's odd that this important setting can only be controlled by an environment variable." |
+| [restic/restic#5600](https://github.com/restic/restic/pull/5600) | merged 2025-11-17 | The maintainer closed the issue with this — but it **only fixed the documentation** (two `.rst` files, +4/−5 lines, about Windows `TMP` taking precedence over `TEMP`). **No flag was added.** |
+| [restic/restic#4872](https://github.com/restic/restic/issues/4872) — *environment variable TMPDIR is ignored* | closed 2024-06-25 | A user's shell wrapper was resetting `TMPDIR=/tmp`; restic was working correctly. The maintainer's diagnostic — "check in `/proc/<restic-PID>/environ` whether the TMPDIR is set correctly" — is exactly the assertion this package's harness makes. |
+| [restic/restic#21840](https://github.com/restic/restic/issues/21840) — *restic writes much data to the local drive* | **open** | The same complaint from the SD-card angle. Worth watching: if upstream ever changes its mind about a flag, it will land here first. |
+
+So: as of restic **0.19.1** — the version this package ships — and on `master`,
+**there is no `--temp-dir`**. Checked in the release tarball's `cmd/` and `doc/`
+trees and in `cmd/restic/global.go` on `master`: no such flag, and no open PR for
+one.
+
+What upstream *does* document, in the "Temporary files" section of
+`doc/manual_rest.rst`, is precisely the fix implemented here:
+
+```
+During some operations (e.g. backup and prune) restic uses temporary files to
+store data. These files will, by default, be saved to the system's temporary
+directory, on Linux this is usually located in /tmp/. To specify a different
+directory for temporary files, set the appropriate environment variable. On
+non-Windows operating systems, use the TMPDIR environment variable.
+
+    $ export TMPDIR=/var/tmp/restic-tmp
+    $ restic -r /srv/restic-repo backup ~/work
+```
+
+Two details worth knowing, both from upstream:
+
+- **`TMPDIR` is not only about the temp packs.** `prune` and `check` also use
+  temporary files, so a `prune` on a small tmpfs can fail the same way.
+- **On Windows the variable is `TMP`**, not `TEMP` — that precedence mix-up is
+  what PR #5600 fixed in the documentation. It does not affect Linux.
+
+## Authentication
+
 Upstream ships with authentication **disabled**, and the default config here keeps
 that. The API can delete backups, so this matters: the service script logs a warning
 on every start, and the package README says to create a user in the UI.

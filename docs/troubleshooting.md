@@ -83,10 +83,21 @@ df -h /tmp          # the tmpfs is the one that filled up
 ```
 
 **Fix:** point `TMPDIR` at a real volume. restic 0.19.1 has **no** `--temp-dir`
-flag, so the environment is the only knob — and it works because the parent
-process's environment is inherited by the restic subprocess. The Backrest package
-sets `TMPDIR=$QPKG_ROOT/data/tmp` for exactly this reason; per repository, the
+flag (`unknown flag: --temp-dir`) — the feature was requested upstream in
+[restic/restic#5572](https://github.com/restic/restic/issues/5572) and closed with
+a documentation fix only ([#5600](https://github.com/restic/restic/pull/5600)) —
+so the environment is the only knob, and it works because the parent process's
+environment is inherited by the restic subprocess. The Backrest package sets
+`TMPDIR=$QPKG_ROOT/data/tmp` for exactly this reason; per repository, the
 Backrest UI's *Environment variables* field sets it for one repo only.
+
+**If `TMPDIR` appears to be ignored**, check what the process actually sees —
+upstream had the same report ([restic/restic#4872](https://github.com/restic/restic/issues/4872)),
+and the cause was a wrapper script resetting it:
+
+```sh
+tr '\0' '\n' < /proc/$(pgrep -f restic | head -1)/environ | grep TMPDIR
+```
 
 ### Installed fine, port refuses connections
 
