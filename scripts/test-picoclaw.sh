@@ -146,7 +146,47 @@ EOF
     # refuses to answer anything without a dashboard password.
     chk "GET /"                "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/")" "302"
     chk "GET /launcher-login"  "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/launcher-login")" "200"
-    chk "GET /api/health (unauthenticated)" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/api/health")" "401"
+    chk "GET /api/config (unauthenticated)" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/api/config")" "401"
+
+    # The dashboard password, set the way the setup page does it. The API
+    # validates it: at least 8 characters, and the two fields must match.
+    chk "setup rejects a short password" \
+        "$(curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{"password":"short","confirm":"short"}' "http://127.0.0.1:$TEST_PORT/api/auth/setup")" \
+        '{"error":"password must be at least 8 characters"}'
+    chk "setup rejects a mismatch" \
+        "$(curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{"password":"longenough123","confirm":"different123"}' "http://127.0.0.1:$TEST_PORT/api/auth/setup")" \
+        '{"error":"passwords do not match"}'
+    chk "setup accepts a real password" \
+        "$(curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{"password":"correct-horse-battery","confirm":"correct-horse-battery"}' "http://127.0.0.1:$TEST_PORT/api/auth/setup")" \
+        '{"status":"ok"}'
+
+    # The hash is a bcrypt digest in a one-row SQLite table. No plaintext, and
+    # not a hash this package could have shipped.
+    if python3 - "$root/home/launcher-auth.db" <<'PY'
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+rows = list(c.execute("select * from dashboard_credentials"))
+sys.exit(0 if len(rows) == 1 and str(rows[0][1]).startswith("$2a$12$") else 1)
+PY
+    then
+        ok "dashboard password stored as a bcrypt (cost 12) hash"
+    else
+        no "dashboard password not stored as expected"
+    fi
+    if grep -rq "correct-horse-battery" "$root/home" 2>/dev/null; then
+        no "the plaintext password was written to disk"
+    else
+        ok "no plaintext password on disk"
+    fi
+
+    # Logging in yields a session cookie, and only then does the API answer.
+    curl -s -m 5 -c "$bin/cookies" -o /dev/null -X POST -H 'Content-Type: application/json' \
+        -d '{"password":"correct-horse-battery"}' "http://127.0.0.1:$TEST_PORT/api/auth/login"
+    chk "GET /api/auth/status (logged in)" \
+        "$(curl -s -m 5 -b "$bin/cookies" "http://127.0.0.1:$TEST_PORT/api/auth/status")" \
+        '{"authenticated":true,"initialized":true}'
+    chk "GET /api/config (authenticated)" \
+        "$(curl -s -m 5 -b "$bin/cookies" -o /dev/null -w '%{http_code}' "http://127.0.0.1:$TEST_PORT/api/config")" "200"
 
     local pid; pid=$(cat "$root/data/picoclaw.pid" 2>/dev/null)
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then ok "pid alive ($pid)"; else no "pid not alive"; fi

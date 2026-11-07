@@ -93,12 +93,53 @@ default with a 30-model list, and a channel token is generated per install.
 
 ## Authentication
 
-The web console has a **dashboard password**, stored as a bcrypt hash in
-`launcher-auth.db`. Until it is set:
+The web console has a **dashboard password**, stored as a bcrypt hash (cost 12) in
+a one-row SQLite table in `home/launcher-auth.db`. Until it is set:
 
 - `/` redirects to `/launcher-login` (302 → 200);
 - `/api/*` answers **401** — the API is not open;
 - `/launcher-setup` is reachable, and that is how the password is created.
+
+### Setting it
+
+Open **`http://<nas>:18800/launcher-setup`** in a browser and fill in the form.
+The rules, from the handler (`web/backend/api/auth.go`):
+
+| Rule | Error |
+|---|---|
+| at least 8 characters | `password must be at least 8 characters` |
+| the two fields must match | `passwords do not match` |
+| not empty | `password must not be empty` |
+
+Setting it does **not** log you in — you then log in at `/launcher-login`. A
+successful login returns a session cookie:
+
+```
+Set-Cookie: picoclaw_launcher_auth=...; Path=/; Max-Age=2678400; HttpOnly; SameSite=Lax
+```
+
+That is 31 days. Login attempts are rate-limited to **10 per IP per minute**
+(`loginAttemptsPerIP`).
+
+### Changing it, and resetting it
+
+To change an existing password you must already be logged in: `POST
+/api/auth/setup` refuses with `must be authenticated to change password` once a
+password exists. The setup page handles this in the browser.
+
+If the password is lost, the store is the only thing that has to go — it is a
+single SQLite file, and the upstream recovery message says it outright ("stop
+the application, reset dashboard password storage, and restart"):
+
+```sh
+/etc/init.d/picoclaw.sh stop
+rm -f "$(/sbin/getcfg PicoClaw Install_Path -f /etc/config/qpkg.conf)/home/launcher-auth.db"
+/etc/init.d/picoclaw.sh start
+```
+
+The launcher then comes back with an empty password store and the setup page
+works again. Nothing else is lost: the config and the API keys are in
+`home/config.json` and `home/.security.yml`.
 
 The service script logs a warning on every start while no password is set,
 because the console is reachable from the LAN. Set one from the UI at
@@ -134,8 +175,9 @@ not know is not a thing to guess at.
 - The **agent** is not exercised: no model is configured, no API key is set, and
   the `picoclaw gateway` process is never started. The harness covers the web
   console, the service lifecycle and the config wiring.
-- The dashboard password flow is not exercised either — only that the API
-  refuses to answer without one.
+- The dashboard password flow is **exercised** by the harness — the setup
+  validation, the bcrypt hash on disk, and a login — but the password is never
+  set *by the package*, and the reset path is not exercised.
 - `arm_64` is not packaged, although upstream builds it and QTS supports it.
 - Upstream is early: its own README says not to deploy to production before
   v1.0, and warns that recent builds use 10–20 MB of RAM.

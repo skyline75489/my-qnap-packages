@@ -106,13 +106,16 @@ scripts/build-qpkg.sh picoclaw  # -> packages/picoclaw/build/PicoClaw_0.3.1_x86_
 scripts/test-picoclaw.sh
 ```
 
-96 assertions: the package structure, both payloads present and statically linked,
+117 assertions: the package structure, both payloads present and statically linked,
 the seeds carrying no secret — then the real service script driven against a fake
 root with stubbed `/sbin/getcfg` and `/sbin/write_log`:
 
 - start → `/` answers 302 and `/launcher-login` answers 200, while
-  `/api/health` answers **401** — the API is not open before a dashboard password
+  `/api/config` answers **401** — the API is not open before a dashboard password
   is set;
+- the password flow works: the setup endpoint rejects a short password and a
+  mismatch, accepts a real one, stores it as a **bcrypt (cost 12) hash** with no
+  plaintext on disk, and a login then unlocks the API;
 - the shipped config was **filled in locally** (a model list appeared) and a
   per-install channel token was **generated**;
 - nothing was downloaded, and nothing unexpected appeared in the package root;
@@ -130,9 +133,10 @@ to serve its UI), and with a `PATH` containing no `setsid`.
 - **Not installed on the NAS.** Nothing here has been exercised on real QTS.
 - The dashboard password is not set by the package: the launcher prints
   "First-time setup: open /launcher-setup to create the dashboard password", and
-  the service script repeats the warning in the package log. Until it is set,
-  `/api/*` refuses to answer, but the setup page itself is reachable by anyone
-  who can reach the port.
+  the service script repeats the warning in the package log. Set one at
+  `http://<nas>:18800/launcher-setup` — at least 8 characters, and the two
+  fields must match. Until then, `/api/*` refuses to answer, but the setup page
+  itself is reachable by anyone who can reach the port.
 - The agent itself is **not** exercised: no model is configured, no API key is
   set, and the `picoclaw gateway` process (which the launcher starts and stops
   from the web console) is never started by the package. The harness covers the

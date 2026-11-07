@@ -78,7 +78,7 @@ For the OpenList package the same three steps are `scripts/fetch-openlist.sh`,
 For the Backrest package: `scripts/fetch-backrest.sh`,
 `scripts/build-qpkg.sh backrest` and `scripts/test-backrest.sh` (45 assertions).
 For the PicoClaw package: `scripts/fetch-picoclaw.sh`,
-`scripts/build-qpkg.sh picoclaw` and `scripts/test-picoclaw.sh` (96 assertions).
+`scripts/build-qpkg.sh picoclaw` and `scripts/test-picoclaw.sh` (117 assertions).
 
 `test-package.sh` is the real gate, and so are its siblings for the other
 packages. Each plants the payload in a fake root with stubbed QTS helpers
