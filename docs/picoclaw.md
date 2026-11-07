@@ -52,53 +52,86 @@ token would be the same secret on every NAS.
 measured behaviour of the app, not in a feeling about it.
 
 QTS runs a package's service script as **root**. PicoClaw's agent is an LLM
-that runs shell commands. Put those two facts together and the service is root
-code execution driven by model output.
+that can run shell commands. Put those two facts together and the service is
+root code execution driven by model output.
 
-What upstream actually does, at v0.3.1:
+### What the agent can actually do, as shipped
 
-| Fact | Where |
-|---|---|
-| The exec tool runs `sh -c <command>` — arbitrary shell, as whatever uid the process has | `pkg/tools/shell.go:401` |
-| `tools.exec.enabled` is **true** by default, with `allow_remote: true` | the default config the launcher writes |
-| `tools.allow_read_paths` and `tools.allow_write_paths` are **null** — unrestricted filesystem | ditto |
-| `tools.cron.allow_command` is **true** — cron jobs may run commands | ditto |
-| `tools.web.enabled` is **true** — the agent fetches web content, which is the prompt-injection path into all of the above | ditto |
-| The command filter is a **deny list** (`enable_deny_patterns`), not an allow list | `tools.exec` config |
-| There is **no uid check** anywhere in the tools or the agent — no `os.Geteuid`, no "refuse to run as root" | `grep -rn Geteuid pkg/tools/ pkg/agent/` finds nothing |
-| Isolation exists but is **off** by default, applies only to child processes, and needs `bwrap` on the host | `pkg/isolation/README.md` |
+Measured at v0.3.1, from the source and from the config the launcher writes at
+first start:
 
-So on a NAS the package runs, as root: an LLM that can read and write any
-file, run any command, schedule commands, and be told what to do by whatever it
-fetches from the web.
+| Capability | Default | Where |
+|---|---|---|
+| **File tools** (read, edit, append, list) — confined to the agent's **workspace**, which is `PICOCLAW_HOME/workspace` | `agents.defaults.restrict_to_workspace: true`, `allow_read_outside_workspace: false`; the fs tools root themselves with `os.OpenRoot` and refuse anything else with "access denied: path is outside the workspace" | `pkg/tools/fs/filesystem.go`, `pkg/agent/instance.go:113` |
+| `tools.allow_read_paths` / `tools.allow_write_paths` — these **widen** the sandbox, they do not define it | `null`, i.e. no extra paths | `pkg/agent/instance.go:115-116` |
+| **The exec tool** — `sh -c <command>`, arbitrary shell, as whatever uid the process has | `tools.exec.enabled: true`, `allow_remote: true` | `pkg/tools/shell.go:401` |
+| The exec tool's filter — a **deny list** of ~50 regexes (`rm -rf`, `dd if=`, `sudo`, `chmod`, `kill`, `curl|sh`, backticks, `$(...)`…) | `enable_deny_patterns: true` | `pkg/tools/shell.go:52` |
+| **Cron** may run commands | `tools.cron.allow_command: true` | the default config |
+| The agent fetches web content — the prompt-injection path into all of the above | `tools.web.enabled: true` | the default config |
+| Skills may be installed and run | `tools.skills.enabled: true` | the default config |
+| There is **no uid check** anywhere in the tools or the agent — no `os.Geteuid`, no "refuse to run as root" | — | `grep -rn Geteuid pkg/tools/ pkg/agent/` finds nothing |
 
-Upstream's own mitigations, and why neither is enough here as shipped:
+So the file tools are already confined; **the exec tool is the hole**, and it is
+a wide one. A deny list is a speed bump, not a boundary: it blocks the literal
+string `rm -rf`, not `find … -delete`, `unlink`, `truncate` or `shred`; it
+blocks `chmod 777`, not `chmod 7777`; and a bare `>` redirect writes anywhere
+the uid can write — which, as root, is everywhere.
 
-- **`pkg/isolation`** wraps child processes in **bubblewrap** (`bwrap`) with an
-  explicit `expose_paths` allow list. It is `enabled: false` by default, it
-  does not sandbox the main process, and it needs `bwrap` present — a binary
-  this package does not ship, and one that wants user namespaces or setuid on
-  QTS.
-- **`tools.exec.enable_deny_patterns`** is a block list. A block list is a
-  suggestion to the model, not a boundary.
+Upstream's own mitigation, `pkg/isolation`, wraps child processes in
+**bubblewrap** (`bwrap`) with an explicit `expose_paths` allow list — and the
+exec tool *does* go through it (`isolation.Start(cmd)` at
+`pkg/tools/shell.go:415`). But it is `enabled: false` by default, it does not
+sandbox the main process, and it needs `bwrap` present on the host: a binary
+this package does not ship, and one that wants user namespaces or setuid on
+QTS.
+
+### The distinction that resolves the tension
+
+The first version of this note said the fix was to drop privileges, so that the
+agent would "own nothing but the package's own directory". That is the wrong
+lever, and it is worth saying why, because the two capabilities are separable:
+
+- **Usefulness comes from file access.** An assistant on a NAS is useful because
+  it can read the user's documents, organise the photo library, write a report
+  into a folder. That is the **file tools** — and upstream already confines them
+  to the workspace and lets you *widen* that confinement explicitly with
+  `allow_read_paths` / `allow_write_paths`.
+- **Danger comes from command execution.** Arbitrary shell as root is not what
+  makes the agent useful; it is what makes it dangerous.
+
+So the two do not have to be traded off. Grant the file tools exactly the
+paths you want — the shares you choose, read-only for most — and take away the
+shell.
 
 ### What would have to change before this is publishable
 
-1. **Drop privileges.** The service script would run the launcher as an
-   unprivileged account instead of root — `su`/`setpriv` to a dedicated uid,
-   with `$QPKG_ROOT/home` owned by it. That is the important one: it turns
-   "root code execution" into "code execution as an account that owns nothing
-   but the package's own directory". QTS runs the *script* as root; nothing
-   forces the *daemon* to stay root.
-2. **Bundle `bwrap`** and ship a config with `isolation.enabled: true` and an
-   explicit `expose_paths` allow list, so the agent's commands cannot see the
-   filesystem or the network by default.
-3. **Ship a hardened default config** — `tools.exec.enabled: false`,
-   `tools.cron.allow_command: false` — so the web console works and the agent
-   cannot execute anything until the user turns it on.
+1. **Ship a hardened default config.** `tools.exec.enabled: false` and
+   `tools.cron.allow_command: false`, so the web console works and the agent
+   cannot execute anything until the user turns it on. This is a one-line
+   change to the seed `config.json`, and it is the single most valuable one.
+2. **Make the file allow list explicit**, e.g.
+   `allow_read_paths: ["^/share/CACHEDEV1_DATA/Documents/"]`, so "the agent may
+   read this folder" is a statement in the config rather than an accident of
+   the sandbox's default.
+3. **Bundle `bwrap`** and ship `isolation.enabled: true` with an explicit
+   `expose_paths` allow list, so even an enabled exec tool runs in a namespace
+   that cannot see the rest of the filesystem.
+4. **Drop privileges as defence in depth** — the service script would run the
+   launcher as an unprivileged uid instead of root. This is worth doing, but on
+   its own it is not the fix: it would leave the agent able to run shell as
+   that uid, and it would make it *useless* unless the uid is granted access to
+   the shares you want it to work with.
 
-None of that is implemented. The package as it stands is the plain upstream
+None of that is implemented. The package as it stands is plain upstream
 behaviour, which is why it stays unpublished.
+
+### The residual risk, stated honestly
+
+Even with all four changes, an LLM that can read your files and fetch the web
+is exposed to prompt injection: a document or a web page can contain
+instructions the model then acts on. Upstream's mitigations reduce the blast
+radius; they do not remove it. Running an agent on a NAS is a decision with a
+risk that cannot be engineered away — only bounded.
 
 ## Ports
 

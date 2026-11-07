@@ -65,11 +65,13 @@ Per-package decisions live in each package's README and in `docs/<name>.md`.
 9. **QTS runs a package's service script as root. Ask what the app does with
    that.** An app that executes commands — an LLM agent, a script runner, a
    plugin host — turns model output, a webhook or a web page into root code
-   execution on the NAS. Before packaging one, either drop privileges (the
-   script can `su` to an unprivileged account; nothing forces the daemon to
-   stay root) or refuse to package it, and write down which. The PicoClaw
-   package is in the repo unpublished for exactly this reason — see
-   `docs/picoclaw.md`.
+   execution on the NAS. Before packaging one, find out which *capability* is
+   the dangerous one: an agent that can read files is often confined by the
+   app itself, while the shell tool is the hole. Grant the safe capability
+   explicitly (an allow list of paths) and take away the dangerous one
+   (`exec` off by default, a sandbox for what remains), and drop privileges as
+   defence in depth rather than as the fix. The PicoClaw package is in the repo
+   unpublished for exactly this reason — see `docs/picoclaw.md`.
 
 ## Verification standard
 
