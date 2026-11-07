@@ -20,3 +20,4 @@ payload:    backrest_Linux_x86_64 (upstream release binary, static)
 helper:     restic 0.19.1 (https://github.com/restic/restic, static)
 helper_url: https://github.com/restic/restic/releases/tag/v0.19.1
 helper_licence: BSD-3-Clause
+helper_reason: backrest would download a restic binary on first start if it cannot find one.

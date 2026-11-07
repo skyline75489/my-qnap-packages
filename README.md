@@ -73,6 +73,7 @@ Each is a different shape of problem, which is why all three are here.
 | [zot](packages/zot/README.md) | Upstream prebuilt static binary, config in JSON | The plain case: a release binary that already runs on the target libc |
 | [OpenList](packages/openlist/README.md) | Static musl binary, env-driven config, self-generated config | A config the app creates for itself must not be shipped — it would ship a known secret |
 | [Backrest](packages/backrest/README.md) | Two static binaries, the app drives a helper it would otherwise download | Bundling a dependency so the package never reaches out at run time |
+| [PicoClaw](packages/picoclaw/README.md) | Two static binaries, the app's own state is user configuration | Splitting a runtime directory into *tracked seeds* and *runtime state*, so the user's API keys survive an upgrade |
 
 | | |
 |---|---|
@@ -82,6 +83,7 @@ Each is a different shape of problem, which is why all three are here.
 | [docs/static-linking.md](docs/static-linking.md) | verifying a payload's linkage, measured rather than assumed |
 | [docs/publishing.md](docs/publishing.md) | publishing a package as a GitHub release: the gates, the digest, the licence obligations |
 | [docs/nas-topology.md](docs/nas-topology.md) | deployment state for one particular NAS |
+| [docs/picoclaw.md](docs/picoclaw.md) | the PicoClaw package: the web console, the config seeds, the dashboard password |
 
 ## Layout
 
@@ -140,6 +142,7 @@ project's own licence, which ships inside the package as `LICENSE`, with
 | zot | Apache-2.0 |
 | OpenList | AGPL-3.0 |
 | Backrest | GPL-3.0, plus the bundled restic (BSD-3-Clause) |
+| PicoClaw | MIT |
 
 The MIT licence covers this repo's own work, not the third-party binaries it
 redistributes.

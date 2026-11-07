@@ -73,6 +73,15 @@ The licence text is vendored rather than fetched, so it is reviewable in a diff 
 but that also means it can go stale. It is the one thing in the package that is not
 verified by the harness.
 
+### The fields in `SOURCE.txt`
+
+| Field | Meaning |
+|---|---|
+| `name`, `version`, `url`, `tag_url`, `licence` | The upstream the package was built from. Required. |
+| `payload` | What the package ships, in prose. |
+| `helper`, `helper_url`, `helper_licence` | A second upstream, when the package bundles one. |
+| `helper_reason` | Optional. **Why** the helper is bundled — and only when the answer is "the application would otherwise fetch it". restic is bundled for that reason; PicoClaw's web console is bundled because the launcher needs the CLI beside it, which is a different statement. Without the field, the release notes say only what is true. |
+
 ## Signing
 
 These packages are **unsigned**. QTS requires *App Center → Settings → Allow

@@ -1,0 +1,26 @@
+# Upstream source for the PicoClaw package.
+#
+# This package redistributes binaries built by the upstream project below.
+# That upstream source is the "corresponding source" for the binaries inside
+# this package, and the upstream licence text ships alongside them as LICENSE.
+#
+# Read by scripts/release.sh when it writes the release notes, so the published
+# release always states the exact upstream version it was built from.
+#
+# The release tarball carries two binaries and both are shipped:
+#
+#   picoclaw           the CLI and the agent
+#   picoclaw-launcher  the web console and gateway manager — the long-running
+#                      process this package runs as a service
+#
+# Both are statically linked (upstream builds with CGO_ENABLED=0).
+
+name:       PicoClaw
+version:    0.3.1
+url:        https://github.com/sipeed/picoclaw
+tag_url:    https://github.com/sipeed/picoclaw/releases/tag/v0.3.1
+licence:    MIT
+payload:    picoclaw_Linux_x86_64 (upstream release binary, static)
+helper:     picoclaw-launcher 0.3.1 (the upstream web console, from the same release tarball, static)
+helper_url: https://github.com/sipeed/picoclaw/releases/tag/v0.3.1
+helper_licence: MIT

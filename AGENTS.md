@@ -27,7 +27,8 @@ multi-process runtime belongs in Container Station — say so rather than buildi
 
 The worked examples, each a different shape of problem: **zot** (prebuilt static
 binary, JSON config), **OpenList** (static musl binary, self-generated config),
-**Backrest** (two static binaries, a helper that would otherwise be downloaded).
+**Backrest** (two static binaries, a helper that would otherwise be downloaded),
+**PicoClaw** (two static binaries, the app's own state is user configuration).
 Per-package decisions live in each package's README and in `docs/<name>.md`.
 
 ## Ground rules
@@ -76,6 +77,8 @@ For the OpenList package the same three steps are `scripts/fetch-openlist.sh`,
 `scripts/build-qpkg.sh openlist` and `scripts/test-openlist.sh` (43 assertions).
 For the Backrest package: `scripts/fetch-backrest.sh`,
 `scripts/build-qpkg.sh backrest` and `scripts/test-backrest.sh` (45 assertions).
+For the PicoClaw package: `scripts/fetch-picoclaw.sh`,
+`scripts/build-qpkg.sh picoclaw` and `scripts/test-picoclaw.sh` (96 assertions).
 
 `test-package.sh` is the real gate, and so are its siblings for the other
 packages. Each plants the payload in a fake root with stubbed QTS helpers
@@ -109,6 +112,7 @@ service and report nonsense failures. Every test script uses `TEST_PORT`.
 | **docs/zot-binary-notes.md** | Release assets, the `-minimal` build, linkage, payload size |
 | **docs/openlist.md** | The OpenList package: env vars, config paths, first start, licensing |
 | **docs/backrest.md** | The Backrest package: why restic is bundled, ports, paths, authentication |
+| **docs/picoclaw.md** | The PicoClaw package: the web console, the config seeds, the dashboard password |
 | **packages/*/README.md** | What's inside each package and how its service script behaves |
 
 ## Commands
@@ -117,11 +121,13 @@ service and report nonsense failures. Every test script uses `TEST_PORT`.
 scripts/fetch-zot.sh                     # payload -> packages/zot/x86_64/zot (sha256-checked)
 scripts/fetch-openlist.sh                # payload -> packages/openlist/x86_64/openlist (md5 + sha256)
 scripts/fetch-backrest.sh                # payloads -> packages/backrest/x86_64/{backrest,restic} (sha256)
+scripts/fetch-picoclaw.sh                # payloads -> packages/picoclaw/x86_64/{picoclaw,picoclaw-launcher} (sha256)
 scripts/make-icons.sh <logo.png> <dir> [name]   # regenerate App Center icons (icons/ is committed)
 scripts/build-qpkg.sh [package]          # qbuild --strict; needs .tools/QDK
 scripts/test-package.sh [pkg.qpkg]       # verify the zot package without a NAS
 scripts/test-openlist.sh [pkg.qpkg]      # verify the OpenList package without a NAS
 scripts/test-backrest.sh [pkg.qpkg]      # verify the Backrest package without a NAS
+scripts/test-picoclaw.sh [pkg.qpkg]      # verify the PicoClaw package without a NAS
 scripts/debug-zot-qpkg.sh                # READ-ONLY, runs ON the NAS as root
 scripts/release.sh <package>             # publish a built .qpkg as a GitHub release
 ```

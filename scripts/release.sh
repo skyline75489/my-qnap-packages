@@ -68,6 +68,10 @@ UP_URL=$(srcval url);        UP_TAG=$(srcval tag_url)
 UP_LIC=$(srcval licence);    UP_PAYLOAD=$(srcval payload)
 UP_HELPER=$(srcval helper);  UP_HELPER_URL=$(srcval helper_url)
 UP_HELPER_LIC=$(srcval helper_licence)
+# Optional: why the helper is bundled. Only some helpers are bundled *because*
+# the application would otherwise download one — restic is, the PicoClaw web
+# console is not. Without a reason, the release notes say only what is true.
+UP_HELPER_WHY=$(srcval helper_reason)
 
 [ -n "$VERSION" ] || die "could not read QPKG_VER from $PKG_DIR/qpkg.cfg"
 [ -n "$UP_VER" ] || die "could not read version from $SRC"
@@ -189,9 +193,13 @@ else
         echo "and \`SOURCE.txt\` names the exact upstream version it was built from."
         if [ -n "$UP_HELPER" ]; then
             echo
-            echo "The package also bundles $UP_HELPER, because the application would"
-            echo "otherwise download it at first start. Its source is $UP_HELPER_URL"
-            echo "($UP_HELPER_LIC)."
+            if [ -n "$UP_HELPER_WHY" ]; then
+                echo "The package also bundles $UP_HELPER, because $UP_HELPER_WHY"
+                echo "Its source is $UP_HELPER_URL ($UP_HELPER_LIC)."
+            else
+                echo "The package also bundles $UP_HELPER. Its source is"
+                echo "$UP_HELPER_URL ($UP_HELPER_LIC)."
+            fi
         fi
         echo
         echo "---"
