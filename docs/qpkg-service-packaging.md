@@ -47,6 +47,7 @@ Spend the first hour reading the upstream repo instead. Work through this list:
 | Is there a prebuilt release binary? | Check the releases API for assets | No assets ⇒ you own the build |
 | Does it use CGO? | `go.mod` for `cgo`/`*.c` deps; `CGO_ENABLED=1` in their Dockerfile | CGO ⇒ you own the libc and the shared libs |
 | Does it shell out to other programs? | `grep -rn "exec.LookPath\|exec.Command" api/` | Each one is a runtime dependency you must ship |
+| **Does it execute commands on someone else's instruction?** | see §2.3 | If yes, the package runs as root by default — decide before you build |
 | Does it need a database server? | config/env docs | A server ⇒ container |
 | Does it ship a web UI? | separate `ui/` dir, `npm run build` | UI = build step + payload weight |
 | What licence? | `LICENSE` | AGPL/GPL affect redistribution of the QPKG |
@@ -78,6 +79,53 @@ A native library is a problem only if the code path is unavoidable. Look for a
 pure-Go fallback in the same package. If the only implementation of, say, thumbnail
 generation is a C binding to a big imaging library, that library is mandatory and the
 package is now a *packaging exercise for that library*, not for the service.
+
+### 2.3 Does it execute commands on someone else's instruction?
+
+QTS runs a package's service script as **root**. That is a fact about the target,
+and it is usually harmless: a registry or a backup server does not act on
+instructions from a stranger.
+
+It stops being harmless when the app executes commands that are not the user's
+direct request — an LLM agent, a plugin host, a script runner, a webhook
+receiver. Then "the service runs as root" becomes "someone else's text becomes
+root code execution", and the input is whatever the model read: a web page, a
+document, a chat message.
+
+Ask two questions, and do not skip the first:
+
+1. **Which capability is the dangerous one?** An agent that reads and writes
+   files and an agent that runs a shell are different risks, and upstream often
+   separates them: the file tools are confined to a workspace or a path allow
+   list, while the command tool is not. Read the config defaults — a `null`
+   allow list usually means *the sandbox's own default still applies*, not
+   *unrestricted*. Getting this backwards in either direction is easy.
+2. **Is there a boundary, or only a filter?** A deny list of dangerous
+   commands (`rm -rf`, `sudo`, `dd if=`) is a filter. It is worth having and it
+   is not a boundary: it matches literal strings, and the next one down
+   (`find … -delete`, `unlink`, a bare `>` redirect) is not on the list.
+
+The options, in the order they are worth taking:
+
+- **Turn the dangerous capability off in the shipped config.** If the app has a
+  config switch for it, ship it off and let the user turn it on deliberately.
+- **Make the safe capability explicit.** A path allow list in the config is a
+  statement of what the app may touch, and it survives an upgrade. An implicit
+  default is not a decision.
+- **Use the app's own sandbox if it has one**, and check what it needs on the
+  host — a bubblewrap-based sandbox wants user namespaces or setuid, which a
+  NAS may not have.
+- **Drop privileges as defence in depth**, not as the fix. QTS runs the *script*
+  as root; the script can `su` to an unprivileged account. That limits the
+  blast radius, and it is worth doing — but on its own it makes the app
+  useless rather than safe, because the uid then owns nothing. If the app's
+  usefulness depends on file access, the uid needs access to *those* paths,
+  granted the way the NAS grants access to anything else.
+
+This is a packaging decision, not only a runtime one: sometimes the honest
+answer is to package the service and not ship it, and to write down why. The
+PicoClaw package is in this repo, unpublished, for exactly this reason — see
+`docs/picoclaw.md`.
 
 ---
 
@@ -259,7 +307,10 @@ app's own configuration variables. See `packages/zot/shared/zot.sh` for the shap
 8. `scripts/build-qpkg.sh` + a `scripts/test-*.sh` harness that drives the real
    service script, per the verification standard in `AGENTS.md`.
 9. Licence checked for redistribution implications.
-10. Anything not covered by the test harness stated as unverified, not implied.
+10. Checked whether the app executes commands on someone else's instruction, and
+    if it does, the boundary decided and recorded (§2.3) — including the option of
+    packaging it and **not** shipping it.
+11. Anything not covered by the test harness stated as unverified, not implied.
 
 ---
 
