@@ -62,6 +62,14 @@ Per-package decisions live in each package's README and in `docs/<name>.md`.
    and docs are MIT (`LICENSE` at the root). Each package redistributes an
    upstream binary under *that* project's licence, and must ship the upstream
    `LICENSE` text plus a `SOURCE.txt` naming the exact upstream version.
+9. **QTS runs a package's service script as root. Ask what the app does with
+   that.** An app that executes commands — an LLM agent, a script runner, a
+   plugin host — turns model output, a webhook or a web page into root code
+   execution on the NAS. Before packaging one, either drop privileges (the
+   script can `su` to an unprivileged account; nothing forces the daemon to
+   stay root) or refuse to package it, and write down which. The PicoClaw
+   package is in the repo unpublished for exactly this reason — see
+   `docs/picoclaw.md`.
 
 ## Verification standard
 

@@ -46,6 +46,60 @@ The harness also asserts that the shipped `.security.yml` seed contains **no
 token** and that a per-install one appears after the first start — a shipped
 token would be the same secret on every NAS.
 
+## Why this package is not published
+
+**It is not published, and it should not be — yet.** The reason is in the
+measured behaviour of the app, not in a feeling about it.
+
+QTS runs a package's service script as **root**. PicoClaw's agent is an LLM
+that runs shell commands. Put those two facts together and the service is root
+code execution driven by model output.
+
+What upstream actually does, at v0.3.1:
+
+| Fact | Where |
+|---|---|
+| The exec tool runs `sh -c <command>` — arbitrary shell, as whatever uid the process has | `pkg/tools/shell.go:401` |
+| `tools.exec.enabled` is **true** by default, with `allow_remote: true` | the default config the launcher writes |
+| `tools.allow_read_paths` and `tools.allow_write_paths` are **null** — unrestricted filesystem | ditto |
+| `tools.cron.allow_command` is **true** — cron jobs may run commands | ditto |
+| `tools.web.enabled` is **true** — the agent fetches web content, which is the prompt-injection path into all of the above | ditto |
+| The command filter is a **deny list** (`enable_deny_patterns`), not an allow list | `tools.exec` config |
+| There is **no uid check** anywhere in the tools or the agent — no `os.Geteuid`, no "refuse to run as root" | `grep -rn Geteuid pkg/tools/ pkg/agent/` finds nothing |
+| Isolation exists but is **off** by default, applies only to child processes, and needs `bwrap` on the host | `pkg/isolation/README.md` |
+
+So on a NAS the package runs, as root: an LLM that can read and write any
+file, run any command, schedule commands, and be told what to do by whatever it
+fetches from the web.
+
+Upstream's own mitigations, and why neither is enough here as shipped:
+
+- **`pkg/isolation`** wraps child processes in **bubblewrap** (`bwrap`) with an
+  explicit `expose_paths` allow list. It is `enabled: false` by default, it
+  does not sandbox the main process, and it needs `bwrap` present — a binary
+  this package does not ship, and one that wants user namespaces or setuid on
+  QTS.
+- **`tools.exec.enable_deny_patterns`** is a block list. A block list is a
+  suggestion to the model, not a boundary.
+
+### What would have to change before this is publishable
+
+1. **Drop privileges.** The service script would run the launcher as an
+   unprivileged account instead of root — `su`/`setpriv` to a dedicated uid,
+   with `$QPKG_ROOT/home` owned by it. That is the important one: it turns
+   "root code execution" into "code execution as an account that owns nothing
+   but the package's own directory". QTS runs the *script* as root; nothing
+   forces the *daemon* to stay root.
+2. **Bundle `bwrap`** and ship a config with `isolation.enabled: true` and an
+   explicit `expose_paths` allow list, so the agent's commands cannot see the
+   filesystem or the network by default.
+3. **Ship a hardened default config** — `tools.exec.enabled: false`,
+   `tools.cron.allow_command: false` — so the web console works and the agent
+   cannot execute anything until the user turns it on.
+
+None of that is implemented. The package as it stands is the plain upstream
+behaviour, which is why it stays unpublished.
+
 ## Ports
 
 | Port | What | Bound to |
@@ -170,6 +224,8 @@ not know is not a thing to guess at.
 
 ## What is not covered
 
+- **The package is not published**, for the reason in the section above: it
+  would run an LLM agent with shell access, as root, on a NAS.
 - **Nothing has been run on a real NAS.** The package builds and the harness
   passes; that is the whole of the evidence.
 - The **agent** is not exercised: no model is configured, no API key is set, and

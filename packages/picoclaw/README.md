@@ -3,6 +3,11 @@
 Native-binary QPKG for the QNAP NAS. There is no Container Station dependency and
 nothing is downloaded at install time — or at run time.
 
+> **This package is not published.** QTS runs a package's service script as
+> root, and PicoClaw's agent is an LLM that runs `sh -c` — so as shipped, this
+> would be root code execution driven by model output. The measured details and
+> what would have to change are in [`../../docs/picoclaw.md`](../../docs/picoclaw.md#why-this-package-is-not-published).
+
 Decisions behind it: [`../../docs/picoclaw.md`](../../docs/picoclaw.md).
 
 ## Layout
@@ -128,6 +133,8 @@ to serve its UI), and with a `PATH` containing no `setsid`.
 
 ## Not done yet
 
+- **Not published, and deliberately so** — see the note at the top. The agent's
+  exec tool runs `sh -c` as root, with unrestricted filesystem paths.
 - Unsigned. QTS requires App Center → "Allow installation of applications without a
   valid digital signature", or a GPG/QNAP signing step.
 - **Not installed on the NAS.** Nothing here has been exercised on real QTS.
