@@ -45,6 +45,7 @@ Spend the first hour reading the upstream repo instead. Work through this list:
 | Question | How to answer it | Why it matters |
 |---|---|---|
 | Is there a prebuilt release binary? | Check the releases API for assets | No assets ⇒ you own the build |
+| Does it ship a VM runtime (.NET, JVM)? | measure the GLIBC floor of **every** ELF in the tarball, not just the main binary | see §2.4 — the runtime is often fine and one bundled `.so` is not |
 | Does it use CGO? | `go.mod` for `cgo`/`*.c` deps; `CGO_ENABLED=1` in their Dockerfile | CGO ⇒ you own the libc and the shared libs |
 | Does it shell out to other programs? | `grep -rn "exec.LookPath\|exec.Command" api/` | Each one is a runtime dependency you must ship |
 | **Does it execute commands on someone else's instruction?** | see §2.3 | If yes, the package runs as root by default — decide before you build |
@@ -127,6 +128,137 @@ answer is to package the service and not ship it, and to write down why. The
 PicoClaw package is in this repo, unpublished, for exactly this reason — see
 `docs/picoclaw.md`.
 
+### 2.4 .NET (and other VM runtimes) are not automatically excluded
+
+A common assumption is that "a .NET app" is a QPKG no-go. **It is not.** A .NET app
+that ships as a self-contained release tarball is just a directory of ELF files, and
+the only question that matters is the same one as for any other payload: does every
+one of those files link against a glibc the NAS has?
+
+Measured on [Lidarr](https://github.com/Lidarr/Lidarr) release tarballs
+(`linux-core-x64`, the glibc build — not `linux-musl`):
+
+| Release | Runtime | Highest `GLIBC_*` in the whole tarball | Loads on glibc 2.21? |
+|---|---|---|---|
+| v3.1.6.5079 | .NET 8 (`net8.0`, runtime 8.0.27) | **2.34** | no — but fixable, see below |
+| v2.14.5.4836 | .NET 6 (`net6.0`, runtime 6.0.35) | **2.16** | yes |
+| v1.2.6.3313 | .NET 6 (`net6.0`) | **2.16** | yes |
+
+The interesting part is *where* the 2.34 came from. The .NET runtime itself was
+fine in every build:
+
+```
+$ objdump -T libcoreclr.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -2
+GLIBC_2.14
+GLIBC_2.16
+```
+
+The offender was a single bundled native library — `libe_sqlite3.so`, compiled by
+the upstream vendor on a modern distro, pulling in `pthread_create@GLIBC_2.34`,
+`dlopen@GLIBC_2.34` and `dlerror@GLIBC_2.34`. So the failure is not ".NET is too
+new"; it is "one vendor-compiled `.so` is too new".
+
+**That one library is usually swappable — and that changes the answer.** A bundled
+SQLite is a *plain amalgamation*: it exports the standard `sqlite3_*` C API and
+nothing else. Check before assuming the payload is unfixable:
+
+```sh
+objdump -T libe_sqlite3.so | awk '$3=="DF"||$3=="DO"{print $NF}' \
+  | grep -vE '^sqlite3_' | head
+# empty output => it is a stock SQLite amalgamation => rebuildable from source
+```
+
+Rebuilding it against the target libc is a small, contained job — the SQLite
+amalgamation is one `.c` file, and `manylinux2014` is already the build image
+(§3.1):
+
+```sh
+gcc -O2 -fPIC -shared -Wl,-soname,libe_sqlite3.so -o libe_sqlite3.so sqlite3.c \
+    -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_COLUMN_METADATA \
+    -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE \
+    -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_MATH_FUNCTIONS \
+    -DSQLITE_ENABLE_DESERIALIZE -DSQLITE_ENABLE_GEOPOLY -DSQLITE_ENABLE_SNAPSHOT \
+    -lpthread -ldl -lm
+```
+
+Measured on Lidarr v3's `libe_sqlite3.so` (SQLite 3.53.4):
+
+| | bundled | rebuilt |
+|---|---|---|
+| Highest `GLIBC_*` | **2.34** | **2.14** |
+| `sqlite3_*` exports | 300 | 296 |
+
+The four absent exports are `sqlite3_key`, `sqlite3_key_v2`, `sqlite3_rekey` and
+`sqlite3_rekey_v2` — the SQLite Encryption Extension (SEE) API, which is a
+**paid** feature and unused by an app that does not encrypt its database. The
+rebuilt library was loaded and queried (`SELECT` returns the right row) to confirm
+it is a working drop-in.
+
+**Match the upstream compile flags.** The `-D` list above was derived by diffing
+the exported symbol sets; a plain `gcc sqlite3.c` build is missing 28 symbols
+(`sqlite3_preupdate_hook`, `sqlite3_column_database_name`, …) and will fail to
+resolve them at runtime. Diff the two symbol sets before shipping a rebuild:
+
+```sh
+objdump -T libe_sqlite3.so | awk '$3=="DF"||$3=="DO"{print $NF}' \
+  | grep -E '^sqlite3_' | sort -u > bundled.txt
+# ... rebuild, then:
+comm -23 bundled.txt rebuilt.txt      # symbols the app will fail to resolve
+```
+
+So the practical order of attack for a .NET payload is:
+
+1. Measure the whole tarball (§3). Identify the single library that breaks it.
+2. If it is a stock SQLite amalgamation, rebuild it against glibc ≤ 2.17 and
+   ship that instead of walking back the upstream release.
+3. Only walk back the release series if the offender is something that cannot
+   be rebuilt (a proprietary codec, a vendor blob).
+
+The `linux-musl` variants are **not** a shortcut around this. They replace the
+glibc dependency with a musl one (`libc.musl-x86_64.so.1`), which a glibc QTS
+does not have; making one work means shipping the musl loader and re-pointing
+the ELF interpreter. That is a real project, not a repack.
+
+#### The host libraries a .NET app still needs
+
+A self-contained .NET tarball carries the runtime but not the C libraries the
+runtime `dlopen`s at startup. Audit them by probing the strings, not by reading
+the docs:
+
+```sh
+# ICU (globalization). Versioned sonames are probed, so an old ICU may be rejected.
+strings libSystem.Globalization.Native.so | grep -E 'libicuuc|libicui18n|so\.%'
+
+# OpenSSL (TLS) — the probe list shows which sonames are accepted.
+strings libSystem.Security.Cryptography.Native.OpenSsl.so | grep '^libssl\.so'
+
+# SQLite, when the app P/Invokes the system library rather than bundling one.
+strings System.Data.SQLite.dll | grep -x 'sqlite3'
+```
+
+On Lidarr v2 that audit yields: host ICU, host OpenSSL, and **host
+`libsqlite3.so`** — confirmed by running it and reading `/proc/<pid>/maps`, where
+the loaded library was the system's `/usr/lib64/libsqlite3.so.0`. So even a
+version whose glibc floor is fine still has to be matched against what QTS
+actually provides — check the NAS, do not assume.
+
+If ICU is missing or too old for the runtime to accept, the runtime has an
+escape hatch (`System.Globalization.Invariant`, present in
+`System.Private.CoreLib.dll`) that disables culture-sensitive behaviour. It
+changes sorting and string comparison, so treat it as a degraded mode to be
+tested against the app, not a free fix.
+
+#### The two rules that bite .NET apps hardest on QTS
+
+- **Disable the self-updater.** Lidarr (like the whole *arr family) downloads a
+  new release of itself at runtime unless told otherwise. That is exactly the
+  "no runtime downloads" rule in `AGENTS.md` — an unattended binary fetch. Pin
+  the update mechanism to *external* in the shipped config.
+- **Check the licence.** Lidarr is **GPL-3.0**. Redistributing a GPL-3.0 binary
+  inside a QPKG carries the corresponding-source obligation on top of the
+  `LICENSE` + `SOURCE.txt` rule in `AGENTS.md`. That obligation is a packaging
+  decision to make before writing the fetch script, not after.
+
 ---
 
 ## 3. Satisfy the glibc constraint
@@ -143,6 +275,20 @@ The NAS runs **glibc 2.21**. QTS pins it deliberately, so it will not be raised.
 objdump -T ./binary | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -3
 # every version listed must be <= 2.21
 ```
+
+- **Measure every ELF in the payload, not just the entry point.** A bundled
+  library can carry a higher floor than the main executable — that is exactly
+  what happens with a .NET app that ships one vendor-compiled native library
+  (see §2.4). One command over the whole tree:
+
+```sh
+find . -type f -exec objdump -T {} \; 2>/dev/null \
+  | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -3
+# any version > 2.21 means the payload will not load
+```
+
+(`objdump` fails quietly on non-ELF files, so there is no need to test the magic
+bytes first.)
 
 A **fully static** binary sidesteps libc entirely, but only if it has no CGO. With
 CGO you are in the "build against an older libc" business, and `docs/static-linking.md`
@@ -298,19 +444,22 @@ app's own configuration variables. See `packages/zot/shared/zot.sh` for the shap
 3. Feature-gated heavy dependencies removed via build tags (§4).
 4. Built in a glibc ≤ 2.17 environment; `objdump -T` confirms every `GLIBC_*` symbol
    is ≤ 2.21 (§3).
-5. Runtime surface inventoried with `ldd` and `PATH`; everything it needs ships
+5. If the payload is a VM runtime (.NET, JVM), the whole tarball measured, not just
+   the entry point, and the host libraries it `dlopen`s (ICU, OpenSSL, libsqlite3)
+   confirmed present on the NAS (§2.4).
+6. Runtime surface inventoried with `ldd` and `PATH`; everything it needs ships
    inside the package (§5).
-6. Port chosen away from 5000; config file registered for upgrade-safe handling;
+7. Port chosen away from 5000; config file registered for upgrade-safe handling;
    state placement decided (§6).
-7. Payload fetched or built **by a script** that verifies checksums, and the payload
+8. Payload fetched or built **by a script** that verifies checksums, and the payload
    gitignored.
-8. `scripts/build-qpkg.sh` + a `scripts/test-*.sh` harness that drives the real
+9. `scripts/build-qpkg.sh` + a `scripts/test-*.sh` harness that drives the real
    service script, per the verification standard in `AGENTS.md`.
-9. Licence checked for redistribution implications.
-10. Checked whether the app executes commands on someone else's instruction, and
+10. Licence checked for redistribution implications.
+11. Checked whether the app executes commands on someone else's instruction, and
     if it does, the boundary decided and recorded (§2.3) — including the option of
     packaging it and **not** shipping it.
-11. Anything not covered by the test harness stated as unverified, not implied.
+12. Anything not covered by the test harness stated as unverified, not implied.
 
 ---
 
