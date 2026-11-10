@@ -1,0 +1,28 @@
+# Upstream source for the Tunewright package.
+#
+# This package redistributes binaries built from the upstream source below.
+# That source is the "corresponding source" for the binaries inside this
+# package, and the upstream licence text ships alongside them as LICENSE.
+#
+# Tunewright publishes no release artifacts: the project is distributed as a
+# Docker image (ghcr.io/krabhi4/tunewright) and the repository has no GitHub
+# releases. This package therefore builds the server and the frontend from
+# source at a pinned commit, and ships the upstream licence text.
+#
+# Read by scripts/release.sh when it writes the release notes, so the published
+# release always states the exact upstream version it was built from.
+
+name:       Tunewright
+version:    1.2.0
+url:        https://github.com/krabhi4/tunewright
+commit:     247e890b8840e7757559408e4022aad891cbeda8
+commit_url: https://github.com/krabhi4/tunewright/commit/247e890b8840e7757559408e4022aad891cbeda8
+# There is no upstream release. scripts/release.sh prints this as the
+# "Upstream release" row, so it points at the pinned commit instead.
+tag_url:    https://github.com/krabhi4/tunewright/commit/247e890b8840e7757559408e4022aad891cbeda8
+licence:    MIT
+payload:    tunewright-server (built from source, static musl, x86_64)
+payload_note: upstream names the binary tunewright-server; this package ships it as "tunewright"
+frontend:   SvelteKit SPA built from frontend/ with pnpm 12.18.0 (adapter-static)
+frontend_build: pnpm install --frozen-lockfile && pnpm run build
+rust:       1.89.0, target x86_64-unknown-linux-musl

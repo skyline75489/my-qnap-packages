@@ -259,6 +259,38 @@ tested against the app, not a free fix.
   `LICENSE` + `SOURCE.txt` rule in `AGENTS.md`. That obligation is a packaging
   decision to make before writing the fetch script, not after.
 
+### 2.5 When there is nothing to download: pin a commit
+
+The usual verification for a payload is an upstream checksum file. Some projects
+publish **no release artifacts at all** — the project is distributed as a container
+image and the repository has no GitHub releases. Then the payload has to be
+**built**, and the verification has to change shape.
+
+There is no checksum to compare against, so the guarantee comes from pinning and
+from what can be checked around the build:
+
+| Check | What it proves |
+|---|---|
+| check out a **commit SHA**, never a branch or a tag | the tree cannot move under the build; a branch can, a SHA cannot |
+| assert `git rev-parse HEAD` equals the pinned SHA | the checkout landed where it was asked to land |
+| assert the upstream version file matches the version the package claims | the App Center cannot show a version that is not what is inside |
+| assert the built binary **runs** | it is not a wrong-architecture or half-linked artifact |
+| ship the upstream `LICENSE` + `SOURCE.txt`, and put the commit URL in the release notes | the corresponding-source obligation still holds, and a human can review the exact tree |
+
+What this does **not** prove is that the commit is upstream's work rather than
+somebody's. Pinning a commit moves that question to a human reviewer, and the
+release notes should make the commit easy to find — that is the point of printing
+it there.
+
+The cost is real: the build host now needs the toolchain (§3.4), the build takes
+minutes instead of seconds, and the fetch script is really a *build* script.
+Naming it `fetch-<app>.sh` keeps the repo's three-step shape
+(`fetch` → `build-qpkg` → `test-<app>`) intact, but the comment at the top of the
+script must say that it compiles rather than downloads.
+
+The worked example is the **Tunewright** package: `docs/tunewright.md` and
+`packages/tunewright/`.
+
 ---
 
 ## 3. Satisfy the glibc constraint
@@ -369,6 +401,72 @@ outage rather than a design error. Images already present locally are worth chec
 too — a cached upstream image can serve as a source of UI assets and as a reference
 for what the upstream runtime actually needs.
 
+### 3.4 Rust services: build against musl, not against an old glibc
+
+A Rust binary has the same glibc problem as any other, and the same escape hatch:
+`x86_64-unknown-linux-musl` produces a **fully static** binary with no dynamic
+interpreter and no libc dependency. It runs on QTS regardless of the NAS's glibc,
+and the glibc floor stops being a constraint you have to engineer around.
+
+It is worth checking whether the dependency tree allows it before you assume it.
+Rust services are often pure Rust plus a TLS stack, which is exactly the case that
+works:
+
+| In the dependency tree | Effect on a static musl build |
+|---|---|
+| pure-Rust crates | fine |
+| `rustls` + `ring` | fine — `ring` compiles C, see below |
+| `openssl` / `openssl-sys` | needs OpenSSL; either switch to `rustls` or ship the `.so` |
+| `libsqlite3-sys`, `ffmpeg-sys`, `alsa-sys` | needs the host library; a system one is not present on QTS |
+
+Three details bite, all of them build-host plumbing rather than packaging:
+
+```sh
+# 1. a musl C toolchain, for the crates that compile C (ring does)
+#    built from source, no root needed:
+curl -sSLO https://musl.libc.org/releases/musl-1.2.5.tar.gz
+tar xzf musl-1.2.5.tar.gz && cd musl-1.2.5
+./configure --prefix=$HOME/.local/musl --disable-shared && make -j$(nproc) && make install
+
+# 2. point the C compiler at musl, or the C objects are built against the
+#    host's glibc headers and linked into a musl binary
+export CC_x86_64_unknown_linux_musl=$HOME/.local/musl/bin/musl-gcc
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=$HOME/.local/musl/bin/musl-gcc
+
+# 3. rust's musl target ships libc.a and the crt objects but no headers, and
+#    wants a libunwind.a that is not in the host's search path
+export RUSTFLAGS="-C link-self-contained=no -L native=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-musl/lib/self-contained"
+
+cargo build --release --locked --target x86_64-unknown-linux-musl
+```
+
+Then **measure** the result rather than trusting the flag:
+
+```sh
+file -b target/x86_64-unknown-linux-musl/release/<bin>   # "statically linked"
+readelf -l  target/x86_64-unknown-linux-musl/release/<bin> | grep interpreter   # no output
+ldd          target/x86_64-unknown-linux-musl/release/<bin>   # "not a dynamic executable"
+```
+
+`--locked` matters: the upstream `Cargo.lock` is part of the upstream source, and a
+build that silently re-resolves dependencies is not a build of the pinned tree.
+
+Two things a Rust service usually brings that a Go one does not:
+
+- **A frontend.** If the service ships a SPA, the SPA is a directory of static
+  files and the server usually serves it from a path it reads out of the
+  environment. Ship the built assets inside the package and point the service
+  script at them; do not let the app look for them at runtime, and do not let it
+  download them.
+- **Configuration only through the environment.** That is a gift for QPKG
+  work: the service script becomes the entire configuration layer, with no config
+  file format to parse and no secret to keep in the package. Watch for env vars
+  that are *flags* — `TUNEWRIGHT_COOKIE_SECURE=false` must be passed as the
+  string `false`, not left unset, if unset means "true".
+
+The worked example is the **Tunewright** package: `docs/tunewright.md` and
+`packages/tunewright/`.
+
 ---
 
 ## 4. Shrink the dependency surface
@@ -443,7 +541,9 @@ app's own configuration variables. See `packages/zot/shared/zot.sh` for the shap
    feature-gated.
 3. Feature-gated heavy dependencies removed via build tags (§4).
 4. Built in a glibc ≤ 2.17 environment; `objdump -T` confirms every `GLIBC_*` symbol
-   is ≤ 2.21 (§3).
+   is ≤ 2.21 (§3). A Rust service may instead be built against **musl** and linked
+   statically — then the check is that the binary has no dynamic interpreter at all
+   (§3.4).
 5. If the payload is a VM runtime (.NET, JVM), the whole tarball measured, not just
    the entry point, and the host libraries it `dlopen`s (ICU, OpenSSL, libsqlite3)
    confirmed present on the NAS (§2.4).
@@ -451,8 +551,9 @@ app's own configuration variables. See `packages/zot/shared/zot.sh` for the shap
    inside the package (§5).
 7. Port chosen away from 5000; config file registered for upgrade-safe handling;
    state placement decided (§6).
-8. Payload fetched or built **by a script** that verifies checksums, and the payload
-   gitignored.
+8. Payload fetched or built **by a script** that verifies checksums — or, when
+   upstream publishes no release artifact, pins a commit and checks what can be
+   checked around the build (§2.5) — and the payload gitignored.
 9. `scripts/build-qpkg.sh` + a `scripts/test-*.sh` harness that drives the real
    service script, per the verification standard in `AGENTS.md`.
 10. Licence checked for redistribution implications.

@@ -25,10 +25,16 @@ upstream project's native libraries and external tools, and building something t
 runs on the NAS's glibc 2.21. A service that needs a database server or a
 multi-process runtime belongs in Container Station — say so rather than building it.
 
+A .NET (or other VM-runtime) app is **not** automatically disqualified: it is a
+directory of ELF files like any other payload, and the gate is the glibc floor of
+every file in it, not the runtime's name — see `docs/qpkg-service-packaging.md` §2.4.
+
 The worked examples, each a different shape of problem: **zot** (prebuilt static
 binary, JSON config), **OpenList** (static musl binary, self-generated config),
 **Backrest** (two static binaries, a helper that would otherwise be downloaded),
-**PicoClaw** (two static binaries, the app's own state is user configuration).
+**PicoClaw** (two static binaries, the app's own state is user configuration),
+**Tunewright** (**the Rust example**: no upstream release at all — built from a
+pinned commit, static musl server plus a static frontend it serves itself).
 Per-package decisions live in each package's README and in `docs/<name>.md`.
 
 ## Ground rules
@@ -89,6 +95,11 @@ For the Backrest package: `scripts/fetch-backrest.sh`,
 `scripts/build-qpkg.sh backrest` and `scripts/test-backrest.sh` (45 assertions).
 For the PicoClaw package: `scripts/fetch-picoclaw.sh`,
 `scripts/build-qpkg.sh picoclaw` and `scripts/test-picoclaw.sh` (117 assertions).
+For the Tunewright package: `scripts/fetch-tunewright.sh`,
+`scripts/build-qpkg.sh tunewright` and `scripts/test-tunewright.sh` (81 assertions).
+Tunewright is the one package whose payload is **compiled, not downloaded** —
+upstream publishes no release artifacts, so its `fetch` script builds the pinned
+commit instead.
 
 `test-package.sh` is the real gate, and so are its siblings for the other
 packages. Each plants the payload in a fake root with stubbed QTS helpers
@@ -99,7 +110,9 @@ test for the bug that cost three round trips on the real NAS.
 
 A new package needs the same three scripts under the same names, and its harness
 must assert what is *specific* to it — for Backrest, that the bundled helper was
-used and that nothing was downloaded.
+used and that nothing was downloaded, and for Tunewright, that the binary is
+static, that the SPA it serves really shipped, and that the account database did
+not land in the user's music library.
 
 Anything not covered there must be stated as unverified, not implied.
 
@@ -111,7 +124,7 @@ service and report nonsense failures. Every test script uses `TEST_PORT`.
 
 | Read | When |
 |---|---|
-| **docs/qpkg-service-packaging.md** | Starting a new package: does it belong in a QPKG, what does it depend on, how to build it against glibc 2.21 |
+| **docs/qpkg-service-packaging.md** | Starting a new package: does it belong in a QPKG, what does it depend on, how to build it against glibc 2.21 — and, for Rust, how to build it statically against musl instead (§3.4) |
 | **docs/troubleshooting.md** | Something is broken. Symptom → cause → fix, from real failures |
 | **docs/qpkg-spec.md** | Working on the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
 | **docs/static-linking.md** | Verifying a payload's linkage — measured, not assumed |
@@ -122,6 +135,7 @@ service and report nonsense failures. Every test script uses `TEST_PORT`.
 | **docs/zot-binary-notes.md** | Release assets, the `-minimal` build, linkage, payload size |
 | **docs/openlist.md** | The OpenList package: env vars, config paths, first start, licensing |
 | **docs/backrest.md** | The Backrest package: why restic is bundled, ports, paths, authentication |
+| **docs/tunewright.md** | The Tunewright package: building from a pinned commit, static musl, the setup token, paths |
 | **docs/picoclaw.md** | The PicoClaw package: the web console, the config seeds, the dashboard password |
 | **packages/*/README.md** | What's inside each package and how its service script behaves |
 
@@ -132,12 +146,14 @@ scripts/fetch-zot.sh                     # payload -> packages/zot/x86_64/zot (s
 scripts/fetch-openlist.sh                # payload -> packages/openlist/x86_64/openlist (md5 + sha256)
 scripts/fetch-backrest.sh                # payloads -> packages/backrest/x86_64/{backrest,restic} (sha256)
 scripts/fetch-picoclaw.sh                # payloads -> packages/picoclaw/x86_64/{picoclaw,picoclaw-launcher} (sha256)
+scripts/fetch-tunewright.sh               # BUILDS the payload -> packages/tunewright/x86_64/{tunewright,static/}
 scripts/make-icons.sh <logo.png> <dir> [name]   # regenerate App Center icons (icons/ is committed)
 scripts/build-qpkg.sh [package]          # qbuild --strict; needs .tools/QDK
 scripts/test-package.sh [pkg.qpkg]       # verify the zot package without a NAS
 scripts/test-openlist.sh [pkg.qpkg]      # verify the OpenList package without a NAS
 scripts/test-backrest.sh [pkg.qpkg]      # verify the Backrest package without a NAS
 scripts/test-picoclaw.sh [pkg.qpkg]      # verify the PicoClaw package without a NAS
+scripts/test-tunewright.sh [pkg.qpkg]     # verify the Tunewright package without a NAS
 scripts/debug-zot-qpkg.sh                # READ-ONLY, runs ON the NAS as root
 scripts/release.sh <package>             # publish a built .qpkg as a GitHub release
 ```

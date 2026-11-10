@@ -66,7 +66,7 @@ Anything the harness does not cover must be **stated as unverified**, not implie
 
 ## Worked examples
 
-Each is a different shape of problem, which is why all three are here.
+Each is a different shape of problem, which is why all of them are here.
 
 | Package | Shape | What it teaches |
 |---|---|---|
@@ -74,16 +74,18 @@ Each is a different shape of problem, which is why all three are here.
 | [OpenList](packages/openlist/README.md) | Static musl binary, env-driven config, self-generated config | A config the app creates for itself must not be shipped — it would ship a known secret |
 | [Backrest](packages/backrest/README.md) | Two static binaries, the app drives a helper it would otherwise download | Bundling a dependency so the package never reaches out at run time |
 | [PicoClaw](packages/picoclaw/README.md) | Two static binaries, the app's own state is user configuration | Splitting a runtime directory into *tracked seeds* and *runtime state*, so the user's API keys survive an upgrade |
+| [Tunewright](packages/tunewright/README.md) | **Rust**, no upstream release artifact, static musl server + the SPA it serves | Building a Rust service statically against musl, and what to check when there is nothing to download but a commit |
 
 | | |
 |---|---|
 | [docs/troubleshooting.md](docs/troubleshooting.md) | start here when something is broken — symptom → cause → fix, from real failures |
 | [docs/qpkg-spec.md](docs/qpkg-spec.md) | the format itself: layout, `qpkg.cfg`, hook asymmetry, `qbuild`, build-host gotchas |
-| [docs/qpkg-service-packaging.md](docs/qpkg-service-packaging.md) | the method: audit, dependency classification, building against glibc 2.21 |
+| [docs/qpkg-service-packaging.md](docs/qpkg-service-packaging.md) | the method: audit, dependency classification, building against glibc 2.21 (or statically against musl) |
 | [docs/static-linking.md](docs/static-linking.md) | verifying a payload's linkage, measured rather than assumed |
 | [docs/publishing.md](docs/publishing.md) | publishing a package as a GitHub release: the gates, the digest, the licence obligations |
 | [docs/nas-topology.md](docs/nas-topology.md) | deployment state for one particular NAS |
 | [docs/picoclaw.md](docs/picoclaw.md) | the PicoClaw package: the web console, the config seeds, the dashboard password |
+| [docs/tunewright.md](docs/tunewright.md) | the Tunewright package: building from a pinned commit, static musl, the setup token, paths |
 
 ## Layout
 
@@ -97,7 +99,9 @@ scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
 ## Conventions that matter
 
 - **Payloads are never committed.** They are fetched by a script that verifies
-  upstream checksums, and they are gitignored.
+  upstream checksums, and they are gitignored. (Tunewright is the exception that
+  proves the rule: upstream publishes no artifact, so its script *builds* a pinned
+  commit instead — and the payload is gitignored just the same.)
 - **Every package ships its upstream `LICENSE` and a `SOURCE.txt`** naming the
   exact upstream version it was built from. Two of the three packages are copyleft,
   and a public release is redistribution.
@@ -126,6 +130,9 @@ scripts/      fetch payload, build, test without a NAS, NAS-side diagnostics
 - The build host cannot reach `docker.io`, `proxy.golang.org` or `go.dev`; use
   `quay.io`, `goproxy.cn` and the aliyun mirror family. Check reachability before
   designing a build around an endpoint.
+- The Tunewright build additionally needs rustup (musl target), a musl C toolchain
+  in `~/.local/musl` (built from source, no root), node ≥ 20 and pnpm 12; crates.io
+  and the npm registry are reached through mirrors.
 - Package install path on the NAS: `/share/<VOL>/.qpkg/<QPKG_NAME>`.
 
 ## Licence
@@ -143,6 +150,7 @@ project's own licence, which ships inside the package as `LICENSE`, with
 | OpenList | AGPL-3.0 |
 | Backrest | GPL-3.0, plus the bundled restic (BSD-3-Clause) |
 | PicoClaw | MIT |
+| Tunewright | MIT |
 
 The MIT licence covers this repo's own work, not the third-party binaries it
 redistributes.

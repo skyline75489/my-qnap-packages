@@ -1,0 +1,54 @@
+######################################################################
+# package_routines for the Tunewright QPKG
+#
+# Install hooks are FUNCTIONS (pkg_init/pkg_install/pkg_post_install).
+# Removal hooks are shell blocks inlined into the generated uninstall
+# script at BUILD time — anything that must evaluate at removal time has
+# to be escaped as \$VAR / \$(cmd).
+######################################################################
+
+# Run-time data directories. Created imperatively and deliberately NOT shipped
+# in the package: QDK only tracks shipped files for obsolete-file cleanup on
+# upgrade, so a directory it never saw is never touched by an upgrade.
+#
+# tunewright.conf is shipped (it is listed in QPKG_CONFIG) but the logs, the
+# account database and the temp directory are not.
+pkg_install(){
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/data/log"
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/data/state"
+    # TMPDIR: QTS's /tmp is a small tmpfs.
+    $CMD_MKDIR -p "$SYS_QPKG_DIR/data/tmp"
+}
+
+pkg_post_install(){
+    # qbuild keeps the builder's uid. On the NAS that uid can belong to a real
+    # user, who could then edit scripts QTS runs as root.
+    $CMD_CHOWN -R 0:0 "$SYS_QPKG_DIR"
+    $CMD_CHMOD 755 "$SYS_QPKG_DIR/tunewright.sh"
+    $CMD_CHMOD 755 "$SYS_QPKG_DIR/tunewright"
+    $CMD_CHMOD 644 "$SYS_QPKG_DIR/tunewright.conf"
+
+    # The frontend is served from disk as-is: no executable bit, no ownership
+    # tricks. The music library itself is the user's own files and is not
+    # touched here.
+
+    # Daily log-size cap. The stdout log has no built-in rotation and a NAS
+    # runs for months, so a rotation tied to service start would never bound
+    # anything.
+    CRONTAB=/etc/config/crontab
+    if [ -f "$CRONTAB" ] && ! $CMD_GREP -qF "$SYS_QPKG_DIR/tunewright.sh rotate" "$CRONTAB" 2>/dev/null; then
+        echo "0 4 * * * /bin/sh $SYS_QPKG_DIR/tunewright.sh rotate >/dev/null 2>&1" >> "$CRONTAB"
+        crontab "$CRONTAB" 2>/dev/null
+        /etc/init.d/crond.sh restart >/dev/null 2>&1
+    fi
+}
+
+PKG_PRE_REMOVE="{
+    \$SYS_QPKG_DIR/tunewright.sh stop 2>/dev/null || true
+    CRONTAB=/etc/config/crontab
+    if \$CMD_GREP -qF 'tunewright.sh rotate' \"\$CRONTAB\" 2>/dev/null; then
+        \$CMD_SED -i '\\#tunewright.sh rotate#d' \"\$CRONTAB\"
+        crontab \"\$CRONTAB\" 2>/dev/null
+        /etc/init.d/crond.sh restart >/dev/null 2>&1
+    fi
+}"
